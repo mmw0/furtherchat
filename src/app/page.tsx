@@ -15,9 +15,7 @@ export default function Home() {
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('chatTheme')
-    if (savedTheme) {
-      try { setTheme(JSON.parse(savedTheme)) } catch {}
-    }
+    if (savedTheme) { try { setTheme(JSON.parse(savedTheme)) } catch {} }
   }, [])
 
   useEffect(() => {
@@ -45,27 +43,24 @@ export default function Home() {
     return () => { unsubscribe(); clearTimeout(safety) }
   }, [firebaseReady])
 
-  // Loading screen
   if (initializing) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+      <div className="min-h-screen flex items-center justify-center bg-[#0b141a]">
         <div className="text-center">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center mx-auto mb-4 animate-pulse shadow-lg shadow-emerald-500/30">
-            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-18 h-18 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center mx-auto mb-4 animate-pulse shadow-lg shadow-emerald-500/30" style={{ width: 72, height: 72 }}>
+            <svg className="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
             </svg>
           </div>
-          <p className="text-slate-400 text-sm font-medium">Loading FurtherChat...</p>
+          <p className="text-[#8696a0] text-sm font-medium">Loading FurtherChat...</p>
         </div>
       </div>
     )
   }
 
-  // Show auth form for login/register
   if (!currentUser || view === 'login' || view === 'register') {
     return <AuthForm />
   }
 
-  // Show chat app
   return <ChatApp />
 }

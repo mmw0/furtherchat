@@ -20,6 +20,16 @@ import type { User, Message, ChatRoom, ChatRequest, MessageStatus } from './stor
 import { getAvatarColor } from './store'
 
 // ============================================================
+// TYPES
+// ============================================================
+
+export interface SendChatRequestResult {
+  type: 'request' | 'restored'
+  roomId?: string
+  requestId?: string
+}
+
+// ============================================================
 // INPUT SANITIZATION (Security)
 // ============================================================
 export function sanitizeInput(input: string, maxLength: number = 500): string {
@@ -87,7 +97,6 @@ export async function changeUserPassword(currentPassword: string, newPassword: s
   const user = auth.currentUser
   if (!user || !user.email) throw new Error('Not authenticated')
   if (newPassword.length < 6) throw new Error('New password must be at least 6 characters')
-  // Re-authenticate before password change for security
   const credential = EmailAuthProvider.credential(user.email, currentPassword)
   await reauthenticateWithCredential(user, credential)
   await updatePassword(user, newPassword)
@@ -99,13 +108,9 @@ export async function changeUserPassword(currentPassword: string, newPassword: s
 
 export function setupPresence(uid: string): () => void {
   const presenceRef = ref(rtdb, `presence/${uid}`)
-  // Set online immediately
   set(presenceRef, { online: true, lastSeen: rtdbServerTimestamp() })
-  // Set offline on disconnect
   onDisconnect(presenceRef).set({ online: false, lastSeen: rtdbServerTimestamp() })
-  // Also update Firestore
   updateDoc(doc(db, 'users', uid), { isOnline: true }).catch(() => {})
-  // Heartbeat every 20 seconds to keep presence fresh
   const heartbeat = setInterval(() => {
     set(presenceRef, { online: true, lastSeen: rtdbServerTimestamp() })
   }, 20000)
@@ -138,12 +143,10 @@ export async function createDirectChatRoom(currentUid: string, otherUid: string)
   const roomsRef = collection(db, 'chatRooms')
   const q = query(roomsRef, where('type', '==', 'direct'), where('participants', 'array-contains', currentUid))
   const snapshot = await getDocs(q)
-  // Check for existing room - if found and not deleted for current user, restore it
   for (const docSnap of snapshot.docs) {
     const data = docSnap.data()
     if (data.participants.includes(otherUid)) {
-      // If room was "deleted" by current user, restore it by removing from deletedFor
-      const deletedFor = data.deletedFor || []
+      const deletedFor: string[] = data.deletedFor || []
       if (deletedFor.includes(currentUid)) {
         await updateDoc(doc(db, 'chatRooms', docSnap.id), {
           deletedFor: deletedFor.filter((uid: string) => uid !== currentUid),
@@ -153,7 +156,6 @@ export async function createDirectChatRoom(currentUid: string, otherUid: string)
       return docSnap.id
     }
   }
-  // Create new room
   const docRef = await addDoc(collection(db, 'chatRooms'), {
     type: 'direct', name: null, avatar: null, avatarColor: getAvatarColor(otherUid),
     participants: [currentUid, otherUid], deletedFor: [],
@@ -180,7 +182,6 @@ export function listenToChatRooms(uid: string, callback: (rooms: ChatRoom[]) => 
     const rooms: ChatRoom[] = []
     for (const docSnap of snapshot.docs) {
       const data = docSnap.data()
-      // Skip rooms deleted for this user
       const roomDeletedFor: string[] = data.deletedFor || []
       if (roomDeletedFor.includes(uid)) continue
       let roomName = data.name, roomAvatar = data.avatar
@@ -287,7 +288,6 @@ export async function deleteMessageForEveryone(roomId: string, messageId: string
   await updateDoc(doc(db, 'chatRooms', roomId, 'messages', messageId), {
     deletedForEveryone: true, content: 'This message was deleted', type: 'deleted',
   })
-  // Update lastMessage preview if this was the last message
   try {
     const roomDoc = await getDoc(doc(db, 'chatRooms', roomId))
     if (roomDoc.exists()) {
@@ -370,7 +370,7 @@ export async function searchUsers(q: string, currentUid: string): Promise<User[]
   const q2 = query(usersRef, where('displayName', '>=', q), where('displayName', '<=', q + '\uf8ff'), limit(10))
   const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)])
   const usersMap = new Map<string, User>()
-  const process = (snapshot: any) => {
+  const process = (snapshot: { docs: any[] }) => {
     snapshot.docs.forEach((d: any) => {
       if (d.id !== currentUid && !usersMap.has(d.id)) {
         const data = d.data()
@@ -391,7 +391,7 @@ export async function getAllUsers(currentUid: string): Promise<User[]> {
 }
 
 export async function updateProfileData(uid: string, updates: { displayName?: string; avatar?: string; avatarColor?: string }): Promise<void> {
-  const cleanUpdates: any = {}
+  const cleanUpdates: Record<string, string> = {}
   if (updates.displayName) cleanUpdates.displayName = sanitizeInput(updates.displayName, 30)
   if (updates.avatar) cleanUpdates.avatar = updates.avatar
   if (updates.avatarColor) cleanUpdates.avatarColor = updates.avatarColor
@@ -426,37 +426,44 @@ export function listenToTyping(roomId: string, callback: (usernames: string[]) =
 // CHAT REQUESTS
 // ============================================================
 
-export async function sendChatRequest(fromUid: string, fromUsername: string, fromDisplayName: string, fromAvatar: string | null, fromAvatarColor: string, toUid: string, toUsername: string, toDisplayName: string, toAvatar: string | null, toAvatarColor: string, message: string = 'Hi, I would like to chat with you!'): Promise<string> {
+export async function sendChatRequest(
+  fromUid: string, fromUsername: string, fromDisplayName: string, fromAvatar: string | null, fromAvatarColor: string,
+  toUid: string, toUsername: string, toDisplayName: string, toAvatar: string | null, toAvatarColor: string,
+  message: string = 'Hi, I would like to chat with you!'
+): Promise<SendChatRequestResult> {
   // Check for pending requests
   const requestsRef = collection(db, 'chatRequests')
   const snap1 = await getDocs(query(requestsRef, where('fromUid', '==', fromUid), where('toUid', '==', toUid)))
   if (snap1.docs.find(d => d.data().status === 'pending')) throw new Error('You already sent a request to this user')
   const snap2 = await getDocs(query(requestsRef, where('fromUid', '==', toUid), where('toUid', '==', fromUid)))
   if (snap2.docs.find(d => d.data().status === 'pending')) throw new Error('This user already sent you a request. Check your incoming requests!')
-  // Check for existing ACTIVE chat room (not deleted for current user)
+
+  // Check for existing chat room
   const roomsSnap = await getDocs(query(collection(db, 'chatRooms'), where('type', '==', 'direct'), where('participants', 'array-contains', fromUid)))
   for (const roomDoc of roomsSnap.docs) {
     const data = roomDoc.data()
     if (data.participants.includes(toUid)) {
-      // Only block if the room is NOT deleted for the current user
       const roomDeletedFor: string[] = data.deletedFor || []
       if (!roomDeletedFor.includes(fromUid)) {
         throw new Error('You already have a chat with this user')
       }
-      // Room exists but was deleted by current user - restore it instead of sending request
+      // Room exists but was deleted by current user - silently restore it
       await updateDoc(doc(db, 'chatRooms', roomDoc.id), {
         deletedFor: roomDeletedFor.filter((uid: string) => uid !== fromUid),
         updatedAt: serverTimestamp() as Timestamp,
       })
-      throw new Error('Chat restored! Check your chats.')
+      // Return success with 'restored' type - no error thrown
+      return { type: 'restored', roomId: roomDoc.id }
     }
   }
+
+  // No existing room - send a new chat request
   const docRef = await addDoc(collection(db, 'chatRequests'), {
     fromUid, fromUsername, fromDisplayName, fromAvatar, fromAvatarColor,
     toUid, toUsername, toDisplayName, toAvatar, toAvatarColor,
     status: 'pending' as const, message: sanitizeInput(message, 200), createdAt: serverTimestamp() as Timestamp, chatRoomId: null as string | null,
   })
-  return docRef.id
+  return { type: 'request', requestId: docRef.id }
 }
 
 export function listenToSentRequests(uid: string, callback: (requests: ChatRequest[]) => void): () => void {

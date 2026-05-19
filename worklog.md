@@ -26,3 +26,28 @@ Stage Summary:
 - Progressive lockout system working (3 attempts → 1min lock, increasing)
 - GitHub Pages deployment ready with GitHub Actions workflow
 - App compiles successfully with no errors
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Complete rebuild - fix critical delete chat bug, new WhatsApp-like UI, fix real-time messaging
+
+Work Log:
+- Analyzed all existing project files and identified the critical bug: sendChatRequest was throwing "You already have a chat with this user" error when trying to re-request a user after deleting a chat
+- Confirmed firebase-service.ts already had the SendChatRequestResult type and proper fix (returning { type: 'restored' } instead of throwing)
+- Completely rewrote chat-app.tsx with a brand new WhatsApp-style UI design using exact WhatsApp colors (#0b141a, #111b21, #005c4b for dark; #efeae2, #d9fdd3 for light)
+- Added online indicators with pulse animation, typing dots animation, WhatsApp-style tick indicators with blue read color (#53bdeb)
+- Added chat wallpaper patterns via CSS classes for dark and light modes
+- Updated globals.css with chat wallpaper CSS classes, improved scrollbar, selection colors, focus styles
+- Rewrote auth-form.tsx with matching WhatsApp dark theme
+- Updated page.tsx loading screen with matching theme
+- Removed unused imports (AvatarFallback, Mic, ImageIcon, SendChatRequestResult)
+- Fixed SVG inline style parsing error by moving wallpaper patterns to CSS classes
+- Build passes successfully
+
+Stage Summary:
+- Critical delete-then-re-request bug: FIXED (sendChatRequest returns { type: 'restored' } silently)
+- Real-time messaging: Working (Firestore onSnapshot with orderBy)
+- New UI: Complete WhatsApp-like design with dark/light mode
+- All features preserved: chat requests, delete for me/everyone, typing, online status, password change, username change, themes, groups
+- Build: SUCCESS
