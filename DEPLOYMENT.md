@@ -64,6 +64,10 @@ service cloud.firestore {
       allow update: if request.auth != null;
       allow delete: if request.auth != null;
     }
+    match /usernames/{username} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
   }
 }
 ```

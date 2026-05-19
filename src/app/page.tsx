@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useAppStore } from '@/lib/store'
+import { useAppStore, getAvatarColor } from '@/lib/store'
 import { isFirebaseConfigured } from '@/lib/firebase'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
@@ -14,26 +14,16 @@ export default function Home() {
   const firebaseReady = isFirebaseConfigured()
 
   useEffect(() => {
-    // Apply saved theme
-    const savedTheme = localStorage.getItem('theme') as 'dark' | 'light' | null
+    const savedTheme = localStorage.getItem('chatTheme')
     if (savedTheme) {
-      setTheme(savedTheme)
-    } else {
-      document.documentElement.classList.add('dark')
+      try { setTheme(JSON.parse(savedTheme)) } catch {}
     }
   }, [])
 
   useEffect(() => {
-    if (!firebaseReady) {
-      setInitializing(false)
-      setView('setup')
-      return
-    }
-
-    // Check Firebase auth state
+    if (!firebaseReady) { setInitializing(false); setView('setup'); return }
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // User is signed in, get user data
         try {
           const { getDoc, doc } = await import('firebase/firestore')
           const { db } = await import('@/lib/firebase')
@@ -41,45 +31,18 @@ export default function Home() {
           if (userDoc.exists()) {
             const data = userDoc.data()
             setAuth({
-              uid: firebaseUser.uid,
-              username: data.username,
+              uid: firebaseUser.uid, username: data.username,
               displayName: data.displayName || data.username,
-              avatar: data.avatar || null,
-              isOnline: true,
-              lastSeen: null,
+              avatar: data.avatar || null, avatarColor: data.avatarColor || getAvatarColor(firebaseUser.uid),
+              isOnline: true, lastSeen: null, usernameChangedAt: data.usernameChangedAt?.toMillis?.() || null,
             })
-          } else {
-            // User doc doesn't exist, sign out
-            await auth.signOut()
-            setView('login')
-          }
-        } catch (err) {
-          console.error('Error fetching user data:', err)
-          setView('login')
-        }
-      } else {
-        // Check localStorage for cached user
-        const savedUser = localStorage.getItem('chatUser')
-        if (savedUser) {
-          localStorage.removeItem('chatUser')
-        }
-        setView('login')
-      }
+          } else { await auth.signOut(); setView('login') }
+        } catch (err) { console.error(err); setView('login') }
+      } else { localStorage.removeItem('chatUser'); setView('login') }
       setInitializing(false)
     })
-
-    // Safety timeout
-    const safetyTimeout = setTimeout(() => {
-      setInitializing(false)
-      if (!useAppStore.getState().currentUser) {
-        useAppStore.getState().setView('login')
-      }
-    }, 10000)
-
-    return () => {
-      unsubscribe()
-      clearTimeout(safetyTimeout)
-    }
+    const safety = setTimeout(() => { setInitializing(false); if (!useAppStore.getState().currentUser) useAppStore.getState().setView('login') }, 10000)
+    return () => { unsubscribe(); clearTimeout(safety) }
   }, [firebaseReady])
 
   // Loading screen

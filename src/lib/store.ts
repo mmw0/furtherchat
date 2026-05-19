@@ -5,19 +5,31 @@ export interface User {
   username: string
   displayName: string
   avatar: string | null
+  avatarColor: string
   isOnline?: boolean
   lastSeen?: number | null
+  usernameChangedAt?: number | null
 }
+
+export type MessageStatus = 'sent' | 'delivered' | 'read'
 
 export interface Message {
   id: string
   content: string
-  type: 'text' | 'image' | 'system'
+  type: 'text' | 'image' | 'system' | 'deleted'
   senderId: string
   senderName: string
+  senderAvatar: string | null
+  senderAvatarColor: string
   chatRoomId: string
   createdAt: number
-  read: boolean
+  status: MessageStatus
+  readBy: string[]
+  deletedFor: string[]
+  deletedForEveryone: boolean
+  replyTo?: string | null
+  replyToContent?: string | null
+  replyToSender?: string | null
 }
 
 export interface ChatRoom {
@@ -25,6 +37,7 @@ export interface ChatRoom {
   type: 'direct' | 'group'
   name: string | null
   avatar: string | null
+  avatarColor: string
   participants: string[]
   lastMessage: Message | null
   unreadCount: number
@@ -37,201 +50,185 @@ export interface ChatRequest {
   fromUid: string
   fromUsername: string
   fromDisplayName: string
+  fromAvatar: string | null
+  fromAvatarColor: string
   toUid: string
   toUsername: string
   toDisplayName: string
+  toAvatar: string | null
+  toAvatarColor: string
   status: 'pending' | 'accepted' | 'rejected'
   message: string
   createdAt: number
   chatRoomId?: string | null
 }
 
+export type ThemePreset = 'emerald' | 'ocean' | 'sunset' | 'lavender' | 'rose' | 'midnight'
+export type ThemeMode = 'dark' | 'light'
+
+export interface ThemeConfig {
+  mode: ThemeMode
+  preset: ThemePreset
+  fontSize: 'small' | 'medium' | 'large'
+  bubbleStyle: 'rounded' | 'classic' | 'modern'
+}
+
 type AppView = 'login' | 'register' | 'chat' | 'setup'
-type ThemeMode = 'dark' | 'light'
 
 interface AppState {
-  // Auth
   currentUser: User | null
   view: AppView
   setAuth: (user: User) => void
   logout: () => void
   setView: (view: AppView) => void
-
-  // Chat rooms
   chatRooms: ChatRoom[]
   setChatRooms: (rooms: ChatRoom[]) => void
   addChatRoom: (room: ChatRoom) => void
   updateChatRoom: (roomId: string, updates: Partial<ChatRoom>) => void
   removeChatRoom: (roomId: string) => void
-
-  // Active room
   activeRoomId: string | null
   setActiveRoomId: (id: string | null) => void
-
-  // Messages
   messages: Record<string, Message[]>
   setMessages: (roomId: string, messages: Message[]) => void
   addMessage: (roomId: string, message: Message) => void
-
-  // Online users
+  updateMessage: (roomId: string, messageId: string, updates: Partial<Message>) => void
   onlineUsers: Record<string, boolean>
   setOnlineUsers: (users: Record<string, boolean>) => void
   setUserOnline: (uid: string, online: boolean) => void
-
-  // UI state
   sidebarTab: 'chats' | 'users' | 'requests' | 'settings'
   setSidebarTab: (tab: 'chats' | 'users' | 'requests' | 'settings') => void
   showMobileChat: boolean
   setShowMobileChat: (show: boolean) => void
-  showProfile: boolean
-  setShowProfile: (show: boolean) => void
   searchQuery: string
   setSearchQuery: (q: string) => void
-
-  // Theme
-  theme: ThemeMode
-  setTheme: (theme: ThemeMode) => void
-
-  // All registered users (for search)
+  theme: ThemeConfig
+  setTheme: (theme: Partial<ThemeConfig>) => void
   allUsers: User[]
   setAllUsers: (users: User[]) => void
-
-  // Typing indicators
   typingUsers: Record<string, string[]>
   setTypingUsers: (roomId: string, users: string[]) => void
-
-  // Chat requests
   sentRequests: ChatRequest[]
   receivedRequests: ChatRequest[]
   setSentRequests: (requests: ChatRequest[]) => void
   setReceivedRequests: (requests: ChatRequest[]) => void
-  addSentRequest: (request: ChatRequest) => void
   updateRequestStatus: (requestId: string, status: 'accepted' | 'rejected', chatRoomId?: string) => void
   removeRequestFromList: (requestId: string) => void
+  chatSearchQuery: string
+  setChatSearchQuery: (q: string) => void
+  chatSearchResults: Message[]
+  setChatSearchResults: (msgs: Message[]) => void
+  showEmojiPicker: boolean
+  setShowEmojiPicker: (show: boolean) => void
+  replyingTo: Message | null
+  setReplyingTo: (msg: Message | null) => void
+  contextMenuMessage: Message | null
+  setContextMenuMessage: (msg: Message | null) => void
+  showCallDialog: boolean
+  setShowCallDialog: (show: boolean) => void
+  callType: 'voice' | 'video' | null
+  setCallType: (type: 'voice' | 'video' | null) => void
+}
+
+const AVATAR_COLORS = [
+  '#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444',
+  '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#6366f1',
+]
+
+export function getAvatarColor(uid: string): string {
+  let hash = 0
+  for (let i = 0; i < uid.length; i++) {
+    hash = uid.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  // Auth
   currentUser: null,
   view: 'login',
   setAuth: (user) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('chatUser', JSON.stringify(user))
-    }
+    if (typeof window !== 'undefined') localStorage.setItem('chatUser', JSON.stringify(user))
     set({ currentUser: user, view: 'chat' })
   },
   logout: () => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('chatUser')
-    }
+    if (typeof window !== 'undefined') localStorage.removeItem('chatUser')
     set({
-      currentUser: null,
-      view: 'login',
-      chatRooms: [],
-      activeRoomId: null,
-      messages: {},
-      onlineUsers: {},
-      allUsers: [],
-      showMobileChat: false,
-      showProfile: false,
-      typingUsers: {},
-      sentRequests: [],
-      receivedRequests: [],
+      currentUser: null, view: 'login', chatRooms: [], activeRoomId: null,
+      messages: {}, onlineUsers: {}, allUsers: [], showMobileChat: false,
+      typingUsers: {}, sentRequests: [], receivedRequests: [],
+      chatSearchQuery: '', chatSearchResults: [], showEmojiPicker: false,
+      replyingTo: null, contextMenuMessage: null, showCallDialog: false, callType: null,
     })
   },
   setView: (view) => set({ view }),
-
-  // Chat rooms
   chatRooms: [],
   setChatRooms: (rooms) => set({ chatRooms: rooms }),
-  addChatRoom: (room) => set((state) => ({
-    chatRooms: [room, ...state.chatRooms]
-  })),
+  addChatRoom: (room) => set((state) => ({ chatRooms: [room, ...state.chatRooms] })),
   updateChatRoom: (roomId, updates) => set((state) => ({
     chatRooms: state.chatRooms.map(r => r.id === roomId ? { ...r, ...updates } : r)
   })),
   removeChatRoom: (roomId) => set((state) => {
     const newMessages = { ...state.messages }
     delete newMessages[roomId]
-    return {
-      chatRooms: state.chatRooms.filter(r => r.id !== roomId),
-      activeRoomId: state.activeRoomId === roomId ? null : state.activeRoomId,
-      messages: newMessages,
-    }
+    return { chatRooms: state.chatRooms.filter(r => r.id !== roomId), activeRoomId: state.activeRoomId === roomId ? null : state.activeRoomId, messages: newMessages }
   }),
-
-  // Active room
   activeRoomId: null,
   setActiveRoomId: (id) => set({ activeRoomId: id }),
-
-  // Messages
   messages: {},
-  setMessages: (roomId, messages) => set((state) => ({
-    messages: { ...state.messages, [roomId]: messages }
-  })),
+  setMessages: (roomId, messages) => set((state) => ({ messages: { ...state.messages, [roomId]: messages } })),
   addMessage: (roomId, message) => set((state) => {
     const existing = state.messages[roomId] || []
     if (existing.find(m => m.id === message.id)) return state
-    return {
-      messages: { ...state.messages, [roomId]: [...existing, message] }
-    }
+    return { messages: { ...state.messages, [roomId]: [...existing, message] } }
   }),
-
-  // Online users
+  updateMessage: (roomId, messageId, updates) => set((state) => {
+    const existing = state.messages[roomId] || []
+    return { messages: { ...state.messages, [roomId]: existing.map(m => m.id === messageId ? { ...m, ...updates } : m) } }
+  }),
   onlineUsers: {},
   setOnlineUsers: (users) => set({ onlineUsers: users }),
-  setUserOnline: (uid, online) => set((state) => ({
-    onlineUsers: { ...state.onlineUsers, [uid]: online }
-  })),
-
-  // UI state
+  setUserOnline: (uid, online) => set((state) => ({ onlineUsers: { ...state.onlineUsers, [uid]: online } })),
   sidebarTab: 'chats',
   setSidebarTab: (tab) => set({ sidebarTab: tab }),
   showMobileChat: false,
   setShowMobileChat: (show) => set({ showMobileChat: show }),
-  showProfile: false,
-  setShowProfile: (show) => set({ showProfile: show }),
   searchQuery: '',
   setSearchQuery: (q) => set({ searchQuery: q }),
-
-  // Theme
-  theme: (typeof window !== 'undefined' && localStorage.getItem('theme') as ThemeMode) || 'dark',
-  setTheme: (theme) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('theme', theme)
-      document.documentElement.classList.toggle('dark', theme === 'dark')
-    }
-    set({ theme })
+  theme: (typeof window !== 'undefined' && JSON.parse(localStorage.getItem('chatTheme') || 'null')) || {
+    mode: 'dark' as ThemeMode, preset: 'emerald' as ThemePreset, fontSize: 'medium' as const, bubbleStyle: 'rounded' as const,
   },
-
-  // All users
+  setTheme: (updates) => {
+    const newTheme = { ...get().theme, ...updates }
+    if (typeof window !== 'undefined') localStorage.setItem('chatTheme', JSON.stringify(newTheme))
+    set({ theme: newTheme })
+  },
   allUsers: [],
   setAllUsers: (users) => set({ allUsers: users }),
-
-  // Typing
   typingUsers: {},
-  setTypingUsers: (roomId, users) => set((state) => ({
-    typingUsers: { ...state.typingUsers, [roomId]: users }
-  })),
-
-  // Chat requests
+  setTypingUsers: (roomId, users) => set((state) => ({ typingUsers: { ...state.typingUsers, [roomId]: users } })),
   sentRequests: [],
   receivedRequests: [],
   setSentRequests: (requests) => set({ sentRequests: requests }),
   setReceivedRequests: (requests) => set({ receivedRequests: requests }),
-  addSentRequest: (request) => set((state) => ({
-    sentRequests: [request, ...state.sentRequests]
-  })),
   updateRequestStatus: (requestId, status, chatRoomId) => set((state) => ({
-    receivedRequests: state.receivedRequests.map(r =>
-      r.id === requestId ? { ...r, status, chatRoomId: chatRoomId || r.chatRoomId } : r
-    ),
-    sentRequests: state.sentRequests.map(r =>
-      r.id === requestId ? { ...r, status, chatRoomId: chatRoomId || r.chatRoomId } : r
-    ),
+    receivedRequests: state.receivedRequests.map(r => r.id === requestId ? { ...r, status, chatRoomId: chatRoomId || r.chatRoomId } : r),
+    sentRequests: state.sentRequests.map(r => r.id === requestId ? { ...r, status, chatRoomId: chatRoomId || r.chatRoomId } : r),
   })),
   removeRequestFromList: (requestId) => set((state) => ({
     receivedRequests: state.receivedRequests.filter(r => r.id !== requestId),
     sentRequests: state.sentRequests.filter(r => r.id !== requestId),
   })),
+  chatSearchQuery: '',
+  setChatSearchQuery: (q) => set({ chatSearchQuery: q }),
+  chatSearchResults: [],
+  setChatSearchResults: (msgs) => set({ chatSearchResults: msgs }),
+  showEmojiPicker: false,
+  setShowEmojiPicker: (show) => set({ showEmojiPicker: show }),
+  replyingTo: null,
+  setReplyingTo: (msg) => set({ replyingTo: msg }),
+  contextMenuMessage: null,
+  setContextMenuMessage: (msg) => set({ contextMenuMessage: msg }),
+  showCallDialog: false,
+  setShowCallDialog: (show) => set({ showCallDialog: show }),
+  callType: null,
+  setCallType: (type) => set({ callType: type }),
 }))
