@@ -122,6 +122,9 @@ export function listenToChatRooms(uid: string, callback: (rooms: ChatRoom[]) => 
     const rooms: ChatRoom[] = []
     for (const docSnap of snapshot.docs) {
       const data = docSnap.data()
+      // Skip rooms deleted for this user
+      const roomDeletedFor = data.deletedFor || []
+      if (roomDeletedFor.includes(uid)) continue
       let roomName = data.name, roomAvatar = data.avatar
       if (data.type === 'direct') {
         const otherUid = data.participants.find((p: string) => p !== uid)
@@ -187,7 +190,7 @@ export function listenToMessages(roomId: string, currentUid: string, callback: (
   }, (error) => { console.error('Error listening to messages:', error) })
 }
 
-// Delete message
+// Delete message for me only (hides from current user's view)
 export async function deleteMessageForMe(roomId: string, messageId: string, uid: string): Promise<void> {
   const msgDoc = await getDoc(doc(db, 'chatRooms', roomId, 'messages', messageId))
   if (!msgDoc.exists()) return
@@ -196,10 +199,69 @@ export async function deleteMessageForMe(roomId: string, messageId: string, uid:
   await updateDoc(doc(db, 'chatRooms', roomId, 'messages', messageId), { deletedFor })
 }
 
-export async function deleteMessageForEveryone(roomId: string, messageId: string): Promise<void> {
+// Delete message for everyone (WhatsApp-style: replaces content with "This message was deleted")
+// Only the sender can delete for everyone, and only within 48 hours
+export async function deleteMessageForEveryone(roomId: string, messageId: string, senderId: string): Promise<void> {
+  const msgDoc = await getDoc(doc(db, 'chatRooms', roomId, 'messages', messageId))
+  if (!msgDoc.exists()) throw new Error('Message not found')
+  const data = msgDoc.data()
+  // Only the original sender can delete for everyone
+  if (data.senderId !== senderId) throw new Error('Only the sender can delete this message for everyone')
+  // Time limit: 48 hours (WhatsApp gives ~2 days)
+  const messageTime = data.createdAt?.toMillis?.() || 0
+  const hoursSince = (Date.now() - messageTime) / (1000 * 60 * 60)
+  if (hoursSince > 48) throw new Error('You can only delete messages for everyone within 48 hours')
   await updateDoc(doc(db, 'chatRooms', roomId, 'messages', messageId), {
     deletedForEveryone: true, content: 'This message was deleted', type: 'deleted',
   })
+  // Also update the lastMessage preview if this was the last message
+  const roomDoc = await getDoc(doc(db, 'chatRooms', roomId))
+  if (roomDoc.exists()) {
+    const roomData = roomDoc.data()
+    if (roomData.lastMessage && roomData.lastMessage.senderId === data.senderId) {
+      // Check if this was actually the last message by comparing timestamps
+      const lastMsgTime = roomData.lastMessage.createdAt?.toMillis?.() || 0
+      if (Math.abs(lastMsgTime - messageTime) < 1000) {
+        await updateDoc(doc(db, 'chatRooms', roomId), {
+          lastMessage: { ...roomData.lastMessage, content: 'This message was deleted', type: 'deleted' },
+        })
+      }
+    }
+  }
+}
+
+// Clear entire chat for me (marks all messages as deletedFor me)
+export async function clearChatForMe(roomId: string, uid: string): Promise<void> {
+  const msgsSnap = await getDocs(collection(db, 'chatRooms', roomId, 'messages'))
+  const batch = writeBatch(db)
+  msgsSnap.docs.forEach((docSnap) => {
+    const data = docSnap.data()
+    if (data.type === 'system') return // Keep system messages
+    const deletedFor = data.deletedFor || []
+    if (!deletedFor.includes(uid)) {
+      batch.update(doc(db, 'chatRooms', roomId, 'messages', docSnap.id), {
+        deletedFor: [...deletedFor, uid],
+      })
+    }
+  })
+  await batch.commit()
+}
+
+// Delete entire chat room (removes from both users' view)
+export async function deleteChatRoom(roomId: string, uid: string): Promise<void> {
+  // First, mark all messages as deleted for this user
+  await clearChatForMe(roomId, uid)
+  // Remove the room from this user's view by adding uid to a "deletedFor" array on the room
+  const roomDoc = await getDoc(doc(db, 'chatRooms', roomId))
+  if (roomDoc.exists()) {
+    const data = roomDoc.data()
+    const roomDeletedFor = data.deletedFor || []
+    if (!roomDeletedFor.includes(uid)) {
+      await updateDoc(doc(db, 'chatRooms', roomId), {
+        deletedFor: [...roomDeletedFor, uid],
+      })
+    }
+  }
 }
 
 // ============================================================

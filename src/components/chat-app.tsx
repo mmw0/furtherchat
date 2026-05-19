@@ -11,6 +11,7 @@ import {
   sendChatRequest, listenToSentRequests, listenToReceivedRequests,
   acceptChatRequest, rejectChatRequest, cancelChatRequest,
   deleteMessageForMe, deleteMessageForEveryone,
+  clearChatForMe, deleteChatRoom,
 } from '@/lib/firebase-service'
 import type { Message, ThemePreset } from '@/lib/store'
 import { EmojiPicker } from '@/components/emoji-picker'
@@ -25,7 +26,7 @@ import {
   Circle, Phone, Video, Hash, Edit3, Check, X, UserPlus, UserCheck,
   UserX, Clock, Bell, BellRing, Smile, Reply, Trash2, CheckCheck,
   CheckCircle, Palette, Type, MessageSquare, Sun, Moon, Image as ImageIcon,
-  RotateCcw, AtSign, ChevronDown, Sparkles,
+  RotateCcw, AtSign, ChevronDown, Sparkles, MoreVertical, Ban, AlertTriangle,
 } from 'lucide-react'
 
 // ============================================================
@@ -62,6 +63,8 @@ export function ChatApp() {
     sentRequests, receivedRequests, setSentRequests, setReceivedRequests, updateRequestStatus, removeRequestFromList,
     showEmojiPicker, setShowEmojiPicker, replyingTo, setReplyingTo,
     contextMenuMessage, setContextMenuMessage, chatSearchQuery, setChatSearchQuery,
+    deleteConfirm, setDeleteConfirm, chatActionMenu, setChatActionMenu,
+    clearDeleteConfirm, setClearDeleteConfirm,
     logout } = store
 
   const [messageInput, setMessageInput] = useState('')
@@ -81,9 +84,13 @@ export function ChatApp() {
   const [newUsername, setNewUsername] = useState('')
   const [usernameError, setUsernameError] = useState('')
   const [chatSearchOpen, setChatSearchOpen] = useState(false)
+  const [deletingMsg, setDeletingMsg] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+  const [clearingChat, setClearingChat] = useState(false)
   const messageEndRef = useRef<HTMLDivElement>(null)
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const listenersRef = useRef<(() => void)[]>([])
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null)
   const preset = theme.preset
   const tp = THEME_PRESETS[preset]
   const isDark = theme.mode === 'dark'
@@ -145,12 +152,68 @@ export function ChatApp() {
   const hasPendingRequest = (uid: string) => ({ sent: !!sentRequests.find(r => r.toUid === uid && r.status === 'pending'), received: !!receivedRequests.find(r => r.fromUid === uid && r.status === 'pending') })
   const hasExistingChat = (uid: string) => chatRooms.some(r => r.type === 'direct' && r.participants.includes(uid))
 
+  // Long-press handler for mobile (WhatsApp-style)
+  const handleTouchStart = useCallback((msg: Message) => {
+    longPressTimerRef.current = setTimeout(() => {
+      setContextMenuMessage(msg)
+    }, 500)
+  }, [])
+
+  const handleTouchEnd = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }, [])
+
+  // Check if message is within 48 hours (for "Delete for Everyone" eligibility)
+  const canDeleteForEveryone = useCallback((msg: Message) => {
+    if (msg.senderId !== currentUser?.uid) return false
+    if (msg.deletedForEveryone || msg.type === 'deleted') return false
+    const hoursSince = (Date.now() - msg.createdAt) / (1000 * 60 * 60)
+    return hoursSince <= 48
+  }, [currentUser])
+
   const handleDeleteMsg = useCallback(async (msg: Message, forEveryone: boolean) => {
-    if (!activeRoomId) return
-    if (forEveryone) { await deleteMessageForEveryone(activeRoomId, msg.id); updateMessage(activeRoomId, msg.id, { deletedForEveryone: true, content: 'This message was deleted', type: 'deleted' }) }
-    else { await deleteMessageForMe(activeRoomId, msg.id, currentUser!.uid); updateMessage(activeRoomId, msg.id, { deletedFor: [...msg.deletedFor, currentUser!.uid] }) }
-    setContextMenuMessage(null)
+    if (!activeRoomId || !currentUser) return
+    setDeletingMsg(true)
+    setDeleteError('')
+    try {
+      if (forEveryone) {
+        await deleteMessageForEveryone(activeRoomId, msg.id, currentUser.uid)
+        updateMessage(activeRoomId, msg.id, { deletedForEveryone: true, content: 'This message was deleted', type: 'deleted' })
+      } else {
+        await deleteMessageForMe(activeRoomId, msg.id, currentUser.uid)
+        updateMessage(activeRoomId, msg.id, { deletedFor: [...msg.deletedFor, currentUser.uid] })
+      }
+      setContextMenuMessage(null)
+      setDeleteConfirm(null)
+    } catch (err: any) {
+      setDeleteError(err.message || 'Failed to delete message')
+    } finally {
+      setDeletingMsg(false)
+    }
   }, [activeRoomId, currentUser])
+
+  const handleClearChat = useCallback(async (roomId: string, action: 'clear' | 'delete') => {
+    if (!currentUser) return
+    setClearingChat(true)
+    try {
+      if (action === 'delete') {
+        await deleteChatRoom(roomId, currentUser.uid)
+        setActiveRoomId(null)
+        setShowMobileChat(false)
+      } else {
+        await clearChatForMe(roomId, currentUser.uid)
+      }
+      setClearDeleteConfirm(null)
+      setChatActionMenu(false)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setClearingChat(false)
+    }
+  }, [currentUser])
 
   const handleChangeUsername = useCallback(async () => {
     if (!currentUser || !newUsername.trim()) return; setUsernameError('')
@@ -341,10 +404,20 @@ export function ChatApp() {
               <h3 className={`font-semibold ${fontSize} ${isDark ? 'text-white' : 'text-slate-900'}`}>{activeRoom.name || 'Chat'}</h3>
               <p className={`text-[11px] ${textMuted}`}>{activeRoom.type === 'group' ? `${activeRoom.participants.length} members` : onlineUsers[activeRoom.participants.find(p => p !== currentUser?.uid) || ''] ? '🟢 Online' : '⚫ Offline'}{activeTyping.length > 0 && <span className="text-emerald-400 ml-2">typing...</span>}</p>
             </div>
-            <div className="flex gap-0.5">
+            <div className="flex gap-0.5 relative">
               <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400" onClick={() => setChatSearchOpen(!chatSearchOpen)}><Search className="h-4 w-4" /></Button>
               <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400"><Phone className="h-4 w-4" /></Button>
               <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400"><Video className="h-4 w-4" /></Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400" onClick={() => setChatActionMenu(!chatActionMenu)}><MoreVertical className="h-4 w-4" /></Button>
+              {/* Chat action dropdown menu (WhatsApp-style) */}
+              {chatActionMenu && (
+                <div className={`absolute right-0 top-full mt-1 z-50 ${bgCard} border ${borderC} rounded-xl shadow-2xl py-1 min-w-[180px] animate-in fade-in-0 zoom-in-95 duration-150`}>
+                  <button onClick={() => { setChatSearchOpen(true); setChatActionMenu(false) }} className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs ${hoverBg} ${isDark ? 'text-white' : 'text-slate-900'}`}><Search className="h-3.5 w-3.5 text-slate-400" />Search in Chat</button>
+                  <button onClick={() => { setClearDeleteConfirm({ roomId: activeRoomId!, action: 'clear' }); setChatActionMenu(false) }} className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs ${hoverBg} ${isDark ? 'text-white' : 'text-slate-900'}`}><Trash2 className="h-3.5 w-3.5 text-amber-400" />Clear Chat</button>
+                  <div className={`my-1 border-t ${borderC}`} />
+                  <button onClick={() => { setClearDeleteConfirm({ roomId: activeRoomId!, action: 'delete' }); setChatActionMenu(false) }} className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs hover:bg-red-500/10 text-red-400`}><Ban className="h-3.5 w-3.5" />Delete Chat</button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -352,33 +425,46 @@ export function ChatApp() {
           {chatSearchOpen && (<div className={`p-2 border-b ${borderC} ${bgCard} flex items-center gap-2`}><Search className="h-4 w-4 text-slate-500" /><Input placeholder="Search in chat..." value={chatSearchQuery} onChange={(e) => setChatSearchQuery(e.target.value)} className={`flex-1 h-8 ${fontSize} ${inputBg}`} autoFocus /><button onClick={() => { setChatSearchOpen(false); setChatSearchQuery('') }}><X className="h-4 w-4 text-slate-400" /></button>{chatSearchQuery && <span className={`text-[10px] ${textMuted}`}>{searchFilteredMsgs.length} found</span>}</div>)}
 
           {/* Messages */}
-          <div className={`flex-1 overflow-y-auto p-4 space-y-1 ${isDark ? 'bg-slate-900/50' : 'bg-slate-50'}`} onClick={() => { setContextMenuMessage(null); setShowEmojiPicker(false) }}>
+          <div className={`flex-1 overflow-y-auto p-4 space-y-1 ${isDark ? 'bg-slate-900/50' : 'bg-slate-50'}`} onClick={() => { setContextMenuMessage(null); setShowEmojiPicker(false); setChatActionMenu(false) }}>
             {activeMessages.filter(m => !m.deletedFor.includes(currentUser?.uid || '')).map((msg) => {
               const isOwn = msg.senderId === currentUser?.uid
               const isSystem = msg.type === 'system'
               const isDeleted = msg.deletedForEveryone || msg.type === 'deleted'
               if (isSystem) return (<div key={msg.id} className="flex justify-center"><div className={`px-4 py-1.5 rounded-full text-[11px] ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>{msg.content}</div></div>)
               return (
-                <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group`} onContextMenu={(e) => { e.preventDefault(); setContextMenuMessage(msg) }}>
+                <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group`}
+                  onContextMenu={(e) => { e.preventDefault(); setContextMenuMessage(msg) }}
+                  onTouchStart={() => handleTouchStart(msg)}
+                  onTouchEnd={handleTouchEnd}
+                  onTouchMove={handleTouchEnd}
+                >
                   <div className={`max-w-[75%] relative`}>
                     {/* Reply preview */}
                     {msg.replyTo && msg.replyToContent && (<div className={`rounded-t-xl px-3 py-1.5 mb-0.5 text-[11px] border-l-2 ${isOwn ? `${isDark ? 'bg-emerald-900/30 border-emerald-500' : 'bg-emerald-50 border-emerald-400'}` : `${isDark ? 'bg-slate-800 border-slate-600' : 'bg-slate-100 border-slate-300'}`} ${isDark ? 'text-slate-400' : 'text-slate-500'}`}><span className="font-medium">{msg.replyToSender}</span><br />{msg.replyToContent?.slice(0, 80)}{msg.replyToContent && msg.replyToContent.length > 80 ? '...' : ''}</div>)}
                     {/* Message bubble */}
-                    <div className={`px-3 py-2 ${isOwn ? `bg-gradient-to-br ${tp.gradient} text-white rounded-2xl rounded-br-md` : isDark ? 'bg-slate-800 text-slate-200 rounded-2xl rounded-bl-md' : 'bg-slate-200 text-slate-900 rounded-2xl rounded-bl-md'} ${isDeleted ? 'italic opacity-60' : ''}`}>
-                      {!isOwn && activeRoom.type === 'group' && <p className={`text-[11px] font-semibold mb-0.5`} style={{ color: msg.senderAvatarColor || getAvatarColor(msg.senderId) }}>{msg.senderName}</p>}
-                      <p className={`${fontSize} whitespace-pre-wrap break-words`}>{isDeleted ? '🚫 This message was deleted' : msg.content}</p>
+                    <div className={`px-3 py-2 ${isOwn ? `bg-gradient-to-br ${tp.gradient} text-white rounded-2xl rounded-br-md` : isDark ? 'bg-slate-800 text-slate-200 rounded-2xl rounded-bl-md' : 'bg-slate-200 text-slate-900 rounded-2xl rounded-bl-md'} ${isDeleted ? '' : ''}`}>
+                      {!isOwn && activeRoom.type === 'group' && !isDeleted && <p className={`text-[11px] font-semibold mb-0.5`} style={{ color: msg.senderAvatarColor || getAvatarColor(msg.senderId) }}>{msg.senderName}</p>}
+                      {isDeleted ? (
+                        /* WhatsApp-style deleted message */
+                        <div className="flex items-center gap-2">
+                          <Ban className={`h-3.5 w-3.5 ${isOwn ? 'text-white/40' : isDark ? 'text-slate-500' : 'text-slate-400'} shrink-0`} />
+                          <p className={`${fontSize} italic ${isOwn ? 'text-white/50' : isDark ? 'text-slate-500' : 'text-slate-400'}`}>This message was deleted</p>
+                        </div>
+                      ) : (
+                        <p className={`${fontSize} whitespace-pre-wrap break-words`}>{msg.content}</p>
+                      )}
                       <div className={`flex items-center justify-end gap-1 mt-0.5`}>
                         <span className={`text-[9px] ${isOwn ? 'text-white/60' : textMuted}`}>{formatTime(msg.createdAt)}</span>
                         {isOwn && !isDeleted && <TickIndicator status={msg.status} isDark={isDark} preset={preset} />}
                       </div>
                     </div>
-                    {/* Context menu */}
+                    {/* WhatsApp-style context menu with animation */}
                     {contextMenuMessage?.id === msg.id && (
-                      <div className={`absolute ${isOwn ? 'left-0' : 'right-0'} top-0 -translate-y-full z-50 ${bgCard} border ${borderC} rounded-xl shadow-xl py-1 min-w-[160px]`}>
-                        <button onClick={() => { setReplyingTo(msg); setContextMenuMessage(null) }} className={`w-full flex items-center gap-2 px-3 py-2 text-xs ${hoverBg} ${isDark ? 'text-white' : 'text-slate-900'}`}><Reply className="h-3 w-3" />Reply</button>
-                        <button onClick={() => { navigator.clipboard.writeText(msg.content); setContextMenuMessage(null) }} className={`w-full flex items-center gap-2 px-3 py-2 text-xs ${hoverBg} ${isDark ? 'text-white' : 'text-slate-900'}`}>📋 Copy</button>
-                        {isOwn && !isDeleted && <button onClick={() => handleDeleteMsg(msg, true)} className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-red-500/10 text-red-400`}><Trash2 className="h-3 w-3" />Delete for Everyone</button>}
-                        <button onClick={() => handleDeleteMsg(msg, false)} className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-red-500/10 text-red-400`}><Trash2 className="h-3 w-3" />Delete for Me</button>
+                      <div className={`absolute ${isOwn ? 'left-0' : 'right-0'} top-0 -translate-y-full z-50 ${bgCard} border ${borderC} rounded-xl shadow-2xl py-1 min-w-[180px] animate-in fade-in-0 zoom-in-95 duration-150`}>
+                        <button onClick={() => { setReplyingTo(msg); setContextMenuMessage(null) }} className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs ${hoverBg} ${isDark ? 'text-white' : 'text-slate-900'}`}><Reply className="h-3.5 w-3.5 text-slate-400" />Reply</button>
+                        {!isDeleted && <button onClick={() => { navigator.clipboard.writeText(msg.content); setContextMenuMessage(null) }} className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs ${hoverBg} ${isDark ? 'text-white' : 'text-slate-900'}`}>📋 Copy</button>}
+                        {canDeleteForEveryone(msg) && <button onClick={() => { setDeleteConfirm({ msg, forEveryone: true }); setContextMenuMessage(null) }} className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs hover:bg-red-500/10 text-red-400`}><Trash2 className="h-3.5 w-3.5" />Delete for Everyone</button>}
+                        <button onClick={() => { setDeleteConfirm({ msg, forEveryone: false }); setContextMenuMessage(null) }} className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs hover:bg-red-500/10 text-red-400`}><Trash2 className="h-3.5 w-3.5" />Delete for Me</button>
                       </div>
                     )}
                   </div>
@@ -428,6 +514,72 @@ export function ChatApp() {
               {allUsers.filter(u => hasExistingChat(u.uid)).map(u => { const sel = selectedUsers.includes(u.uid); return <button key={u.uid} onClick={() => setSelectedUsers(p => sel ? p.filter(i => i !== u.uid) : [...p, u.uid])} className={`w-full flex items-center gap-2 p-2 rounded-lg ${sel ? (isDark ? 'bg-emerald-600/10 border border-emerald-600/30' : 'bg-emerald-50 border border-emerald-200') : hoverBg}`}><Avatar className="h-7 w-7"><AvatarFallback style={{ background: u.avatarColor }} className="text-white text-[10px]">{getInitials(u.displayName)}</AvatarFallback></Avatar><span className={`text-sm ${isDark ? 'text-white' : 'text-slate-900'}`}>{u.displayName}</span>{sel && <Check className="h-3 w-3 text-emerald-400 ml-auto" />}</button> })}
             </div>
             <Button onClick={() => { createGroupChatRoom(groupName, currentUser!.uid, selectedUsers).then(r => { setActiveRoomId(r); setShowMobileChat(true); setShowNewGroup(false); setGroupName(''); setSelectedUsers([]); setSidebarTab('chats') }) }} disabled={!groupName.trim() || selectedUsers.length === 0} className={`w-full bg-gradient-to-r ${tp.gradient} text-white`}><Users className="h-4 w-4 mr-2" />Create Group</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* WhatsApp-style Delete Message Confirmation Dialog */}
+      <Dialog open={!!deleteConfirm} onOpenChange={(open) => { if (!open) { setDeleteConfirm(null); setDeleteError('') } }}>
+        <DialogContent className={`${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'} max-w-sm`}>
+          <DialogHeader>
+            <DialogTitle className={`flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              <AlertTriangle className="h-5 w-5 text-red-400" />
+              {deleteConfirm?.forEveryone ? 'Delete for Everyone?' : 'Delete for Me?'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {deleteConfirm?.forEveryone ? (
+              <p className={`text-sm ${textSub}`}>
+                This message will be permanently deleted for everyone in this chat. Other participants will see "This message was deleted" instead.
+              </p>
+            ) : (
+              <p className={`text-sm ${textSub}`}>
+                This message will only be deleted from your view. The other person will still be able to see it.
+              </p>
+            )}
+            {/* Preview of the message being deleted */}
+            {deleteConfirm && (
+              <div className={`rounded-lg p-2.5 ${isDark ? 'bg-slate-800/50' : 'bg-slate-100'} border ${borderC}`}>
+                <p className={`text-xs ${textMuted} mb-1`}>{deleteConfirm.msg.senderName}</p>
+                <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-700'} line-clamp-2`}>{deleteConfirm.msg.content}</p>
+              </div>
+            )}
+            {deleteError && <p className="text-xs text-red-400 bg-red-500/10 px-3 py-2 rounded-lg">{deleteError}</p>}
+            <div className="flex gap-2">
+              <Button variant="outline" className={`flex-1 ${isDark ? 'border-slate-700 text-white' : ''}`} onClick={() => { setDeleteConfirm(null); setDeleteError('') }} disabled={deletingMsg}>Cancel</Button>
+              <Button variant="destructive" className="flex-1" onClick={() => deleteConfirm && handleDeleteMsg(deleteConfirm.msg, deleteConfirm.forEveryone)} disabled={deletingMsg}>
+                {deletingMsg ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <>{deleteConfirm?.forEveryone ? 'Delete for Everyone' : 'Delete for Me'}</>}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Clear/Delete Chat Confirmation Dialog */}
+      <Dialog open={!!clearDeleteConfirm} onOpenChange={(open) => { if (!open) setClearDeleteConfirm(null) }}>
+        <DialogContent className={`${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'} max-w-sm`}>
+          <DialogHeader>
+            <DialogTitle className={`flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              <AlertTriangle className="h-5 w-5 text-red-400" />
+              {clearDeleteConfirm?.action === 'delete' ? 'Delete Chat?' : 'Clear Chat?'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {clearDeleteConfirm?.action === 'delete' ? (
+              <p className={`text-sm ${textSub}`}>
+                This chat will be deleted from your chat list. The other person will still have the conversation. This action cannot be undone.
+              </p>
+            ) : (
+              <p className={`text-sm ${textSub}`}>
+                All messages in this chat will be deleted from your view. The other person will still have the messages. This action cannot be undone.
+              </p>
+            )}
+            <div className="flex gap-2">
+              <Button variant="outline" className={`flex-1 ${isDark ? 'border-slate-700 text-white' : ''}`} onClick={() => setClearDeleteConfirm(null)} disabled={clearingChat}>Cancel</Button>
+              <Button variant="destructive" className="flex-1" onClick={() => clearDeleteConfirm && handleClearChat(clearDeleteConfirm.roomId, clearDeleteConfirm.action)} disabled={clearingChat}>
+                {clearingChat ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <>{clearDeleteConfirm?.action === 'delete' ? 'Delete Chat' : 'Clear Chat'}</>}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

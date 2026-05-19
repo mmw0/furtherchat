@@ -123,6 +123,12 @@ interface AppState {
   setReplyingTo: (msg: Message | null) => void
   contextMenuMessage: Message | null
   setContextMenuMessage: (msg: Message | null) => void
+  deleteConfirm: { msg: Message; forEveryone: boolean } | null
+  setDeleteConfirm: (confirm: { msg: Message; forEveryone: boolean } | null) => void
+  chatActionMenu: boolean
+  setChatActionMenu: (show: boolean) => void
+  clearDeleteConfirm: { roomId: string; action: 'clear' | 'delete' } | null
+  setClearDeleteConfirm: (confirm: { roomId: string; action: 'clear' | 'delete' } | null) => void
   showCallDialog: boolean
   setShowCallDialog: (show: boolean) => void
   callType: 'voice' | 'video' | null
@@ -156,7 +162,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       messages: {}, onlineUsers: {}, allUsers: [], showMobileChat: false,
       typingUsers: {}, sentRequests: [], receivedRequests: [],
       chatSearchQuery: '', chatSearchResults: [], showEmojiPicker: false,
-      replyingTo: null, contextMenuMessage: null, showCallDialog: false, callType: null,
+      replyingTo: null, contextMenuMessage: null, deleteConfirm: null, chatActionMenu: false,
+      clearDeleteConfirm: null, showCallDialog: false, callType: null,
     })
   },
   setView: (view) => set({ view }),
@@ -227,6 +234,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   setReplyingTo: (msg) => set({ replyingTo: msg }),
   contextMenuMessage: null,
   setContextMenuMessage: (msg) => set({ contextMenuMessage: msg }),
+  deleteConfirm: null,
+  setDeleteConfirm: (confirm) => set({ deleteConfirm: confirm }),
+  chatActionMenu: false,
+  setChatActionMenu: (show) => set({ chatActionMenu: show }),
+  clearDeleteConfirm: null,
+  setClearDeleteConfirm: (confirm) => set({ clearDeleteConfirm: confirm }),
   showCallDialog: false,
   setShowCallDialog: (show) => set({ showCallDialog: show }),
   callType: null,
