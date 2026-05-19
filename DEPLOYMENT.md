@@ -50,12 +50,19 @@ service cloud.firestore {
     match /chatRooms/{roomId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
-      allow update: if request.auth != null && request.resource.data.participants.hasAny([request.auth.uid]);
+      allow update: if request.auth != null;
       // Messages subcollection
       match /messages/{messageId} {
         allow read: if request.auth != null;
         allow create: if request.auth != null;
       }
+    }
+    // Chat requests
+    match /chatRequests/{requestId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null;
     }
   }
 }

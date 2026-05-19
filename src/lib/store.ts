@@ -32,6 +32,20 @@ export interface ChatRoom {
   createdAt: number
 }
 
+export interface ChatRequest {
+  id: string
+  fromUid: string
+  fromUsername: string
+  fromDisplayName: string
+  toUid: string
+  toUsername: string
+  toDisplayName: string
+  status: 'pending' | 'accepted' | 'rejected'
+  message: string
+  createdAt: number
+  chatRoomId?: string | null
+}
+
 type AppView = 'login' | 'register' | 'chat' | 'setup'
 type ThemeMode = 'dark' | 'light'
 
@@ -65,8 +79,8 @@ interface AppState {
   setUserOnline: (uid: string, online: boolean) => void
 
   // UI state
-  sidebarTab: 'chats' | 'users' | 'settings'
-  setSidebarTab: (tab: 'chats' | 'users' | 'settings') => void
+  sidebarTab: 'chats' | 'users' | 'requests' | 'settings'
+  setSidebarTab: (tab: 'chats' | 'users' | 'requests' | 'settings') => void
   showMobileChat: boolean
   setShowMobileChat: (show: boolean) => void
   showProfile: boolean
@@ -85,6 +99,15 @@ interface AppState {
   // Typing indicators
   typingUsers: Record<string, string[]>
   setTypingUsers: (roomId: string, users: string[]) => void
+
+  // Chat requests
+  sentRequests: ChatRequest[]
+  receivedRequests: ChatRequest[]
+  setSentRequests: (requests: ChatRequest[]) => void
+  setReceivedRequests: (requests: ChatRequest[]) => void
+  addSentRequest: (request: ChatRequest) => void
+  updateRequestStatus: (requestId: string, status: 'accepted' | 'rejected', chatRoomId?: string) => void
+  removeRequestFromList: (requestId: string) => void
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -112,6 +135,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       showMobileChat: false,
       showProfile: false,
       typingUsers: {},
+      sentRequests: [],
+      receivedRequests: [],
     })
   },
   setView: (view) => set({ view }),
@@ -187,5 +212,26 @@ export const useAppStore = create<AppState>((set, get) => ({
   typingUsers: {},
   setTypingUsers: (roomId, users) => set((state) => ({
     typingUsers: { ...state.typingUsers, [roomId]: users }
+  })),
+
+  // Chat requests
+  sentRequests: [],
+  receivedRequests: [],
+  setSentRequests: (requests) => set({ sentRequests: requests }),
+  setReceivedRequests: (requests) => set({ receivedRequests: requests }),
+  addSentRequest: (request) => set((state) => ({
+    sentRequests: [request, ...state.sentRequests]
+  })),
+  updateRequestStatus: (requestId, status, chatRoomId) => set((state) => ({
+    receivedRequests: state.receivedRequests.map(r =>
+      r.id === requestId ? { ...r, status, chatRoomId: chatRoomId || r.chatRoomId } : r
+    ),
+    sentRequests: state.sentRequests.map(r =>
+      r.id === requestId ? { ...r, status, chatRoomId: chatRoomId || r.chatRoomId } : r
+    ),
+  })),
+  removeRequestFromList: (requestId) => set((state) => ({
+    receivedRequests: state.receivedRequests.filter(r => r.id !== requestId),
+    sentRequests: state.sentRequests.filter(r => r.id !== requestId),
   })),
 }))

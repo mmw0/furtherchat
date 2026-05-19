@@ -38,7 +38,7 @@ import {
   User as FirebaseUser,
 } from 'firebase/auth'
 import { auth, db, rtdb } from './firebase'
-import type { User, Message, ChatRoom } from './store'
+import type { User, Message, ChatRoom, ChatRequest } from './store'
 
 // ============================================================
 // AUTHENTICATION
@@ -459,4 +459,178 @@ export function listenToTyping(roomId: string, callback: (usernames: string[]) =
   })
   
   return () => off(typingRef)
+}
+
+// ============================================================
+// CHAT REQUESTS
+// ============================================================
+
+export async function sendChatRequest(
+  fromUid: string,
+  fromUsername: string,
+  fromDisplayName: string,
+  toUid: string,
+  toUsername: string,
+  toDisplayName: string,
+  message: string = 'Hi, I would like to chat with you!'
+): Promise<string> {
+  // Check if a request already exists between these users (in either direction)
+  const requestsRef = collection(db, 'chatRequests')
+  
+  // Check from->to
+  const q1 = query(
+    requestsRef,
+    where('fromUid', '==', fromUid),
+    where('toUid', '==', toUid),
+  )
+  const snap1 = await getDocs(q1)
+  const existingFromTo = snap1.docs.find(d => d.data().status === 'pending')
+  if (existingFromTo) {
+    throw new Error('You already sent a request to this user')
+  }
+  
+  // Check to->from (they already sent us one)
+  const q2 = query(
+    requestsRef,
+    where('fromUid', '==', toUid),
+    where('toUid', '==', fromUid),
+  )
+  const snap2 = await getDocs(q2)
+  const existingToFrom = snap2.docs.find(d => d.data().status === 'pending')
+  if (existingToFrom) {
+    throw new Error('This user already sent you a request. Check your incoming requests!')
+  }
+  
+  // Also check if they already have a chat room
+  const roomsRef = collection(db, 'chatRooms')
+  const roomsQuery = query(
+    roomsRef,
+    where('type', '==', 'direct'),
+    where('participants', 'array-contains', fromUid),
+  )
+  const roomsSnap = await getDocs(roomsQuery)
+  for (const roomDoc of roomsSnap.docs) {
+    const data = roomDoc.data()
+    if (data.participants.includes(toUid)) {
+      throw new Error('You already have a chat with this user')
+    }
+  }
+
+  const requestData = {
+    fromUid,
+    fromUsername,
+    fromDisplayName,
+    toUid,
+    toUsername,
+    toDisplayName,
+    status: 'pending' as const,
+    message,
+    createdAt: serverTimestamp() as Timestamp,
+    chatRoomId: null as string | null,
+  }
+
+  const docRef = await addDoc(collection(db, 'chatRequests'), requestData)
+  return docRef.id
+}
+
+export function listenToSentRequests(uid: string, callback: (requests: ChatRequest[]) => void): () => void {
+  const requestsRef = collection(db, 'chatRequests')
+  const q = query(
+    requestsRef,
+    where('fromUid', '==', uid),
+  )
+
+  return onSnapshot(q, (snapshot) => {
+    const requests: ChatRequest[] = snapshot.docs.map((docSnap) => {
+      const data = docSnap.data()
+      return {
+        id: docSnap.id,
+        fromUid: data.fromUid,
+        fromUsername: data.fromUsername,
+        fromDisplayName: data.fromDisplayName,
+        toUid: data.toUid,
+        toUsername: data.toUsername,
+        toDisplayName: data.toDisplayName,
+        status: data.status,
+        message: data.message || '',
+        createdAt: data.createdAt?.toMillis?.() || Date.now(),
+        chatRoomId: data.chatRoomId || null,
+      }
+    })
+    // Sort by newest first
+    requests.sort((a, b) => b.createdAt - a.createdAt)
+    callback(requests)
+  }, (error) => {
+    console.error('Error listening to sent requests:', error)
+  })
+}
+
+export function listenToReceivedRequests(uid: string, callback: (requests: ChatRequest[]) => void): () => void {
+  const requestsRef = collection(db, 'chatRequests')
+  const q = query(
+    requestsRef,
+    where('toUid', '==', uid),
+  )
+
+  return onSnapshot(q, (snapshot) => {
+    const requests: ChatRequest[] = snapshot.docs.map((docSnap) => {
+      const data = docSnap.data()
+      return {
+        id: docSnap.id,
+        fromUid: data.fromUid,
+        fromUsername: data.fromUsername,
+        fromDisplayName: data.fromDisplayName,
+        toUid: data.toUid,
+        toUsername: data.toUsername,
+        toDisplayName: data.toDisplayName,
+        status: data.status,
+        message: data.message || '',
+        createdAt: data.createdAt?.toMillis?.() || Date.now(),
+        chatRoomId: data.chatRoomId || null,
+      }
+    })
+    // Sort by newest first, pending first
+    requests.sort((a, b) => {
+      if (a.status === 'pending' && b.status !== 'pending') return -1
+      if (a.status !== 'pending' && b.status === 'pending') return 1
+      return b.createdAt - a.createdAt
+    })
+    callback(requests)
+  }, (error) => {
+    console.error('Error listening to received requests:', error)
+  })
+}
+
+export async function acceptChatRequest(requestId: string, fromUid: string, toUid: string): Promise<string> {
+  // Create the chat room first
+  const roomId = await createDirectChatRoom(fromUid, toUid)
+  
+  // Update the request status
+  await updateDoc(doc(db, 'chatRequests', requestId), {
+    status: 'accepted',
+    chatRoomId: roomId,
+  })
+  
+  // Send a system message to the chat room
+  const messagesRef = collection(db, 'chatRooms', roomId, 'messages')
+  await addDoc(messagesRef, {
+    content: 'Chat request accepted! You can now message each other.',
+    type: 'system',
+    senderId: 'system',
+    senderName: 'System',
+    createdAt: serverTimestamp() as Timestamp,
+    read: false,
+  })
+
+  return roomId
+}
+
+export async function rejectChatRequest(requestId: string): Promise<void> {
+  await updateDoc(doc(db, 'chatRequests', requestId), {
+    status: 'rejected',
+  })
+}
+
+export async function cancelChatRequest(requestId: string): Promise<void> {
+  await deleteDoc(doc(db, 'chatRequests', requestId))
 }
