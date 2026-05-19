@@ -115,8 +115,6 @@ interface AppState {
   removeRequestFromList: (requestId: string) => void
   chatSearchQuery: string
   setChatSearchQuery: (q: string) => void
-  chatSearchResults: Message[]
-  setChatSearchResults: (msgs: Message[]) => void
   showEmojiPicker: boolean
   setShowEmojiPicker: (show: boolean) => void
   replyingTo: Message | null
@@ -131,10 +129,8 @@ interface AppState {
   setClearDeleteConfirm: (confirm: { roomId: string; action: 'clear' | 'delete' } | null) => void
   showPasswordChange: boolean
   setShowPasswordChange: (show: boolean) => void
-  showCallDialog: boolean
-  setShowCallDialog: (show: boolean) => void
-  callType: 'voice' | 'video' | null
-  setCallType: (type: 'voice' | 'video' | null) => void
+  showAvatarPicker: boolean
+  setShowAvatarPicker: (show: boolean) => void
 }
 
 const AVATAR_COLORS = [
@@ -150,6 +146,25 @@ export function getAvatarColor(uid: string): string {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
 }
 
+export const BUILT_IN_AVATARS = [
+  { id: 'avatar_1', emoji: '🐱', bg: '#FF6B6B', label: 'Cat' },
+  { id: 'avatar_2', emoji: '🐶', bg: '#4ECDC4', label: 'Dog' },
+  { id: 'avatar_3', emoji: '🦊', bg: '#FF8C42', label: 'Fox' },
+  { id: 'avatar_4', emoji: '🐼', bg: '#A8E6CF', label: 'Panda' },
+  { id: 'avatar_5', emoji: '🦁', bg: '#FFD93D', label: 'Lion' },
+  { id: 'avatar_6', emoji: '🐸', bg: '#6BCB77', label: 'Frog' },
+  { id: 'avatar_7', emoji: '🦋', bg: '#9B59B6', label: 'Butterfly' },
+  { id: 'avatar_8', emoji: '🐲', bg: '#E74C3C', label: 'Dragon' },
+  { id: 'avatar_9', emoji: '🦄', bg: '#3498DB', label: 'Unicorn' },
+  { id: 'avatar_10', emoji: '🐧', bg: '#1ABC9C', label: 'Penguin' },
+  { id: 'avatar_11', emoji: '🦉', bg: '#CD853F', label: 'Owl' },
+  { id: 'avatar_12', emoji: '🐬', bg: '#00CED1', label: 'Dolphin' },
+]
+
+export function getInitials(name: string): string {
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   currentUser: null,
   view: 'login',
@@ -163,9 +178,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       currentUser: null, view: 'login', chatRooms: [], activeRoomId: null,
       messages: {}, onlineUsers: {}, allUsers: [], showMobileChat: false,
       typingUsers: {}, sentRequests: [], receivedRequests: [],
-      chatSearchQuery: '', chatSearchResults: [], showEmojiPicker: false,
+      chatSearchQuery: '', showEmojiPicker: false,
       replyingTo: null, contextMenuMessage: null, deleteConfirm: null, chatActionMenu: false,
-      clearDeleteConfirm: null, showPasswordChange: false, showCallDialog: false, callType: null,
+      clearDeleteConfirm: null, showPasswordChange: false, showAvatarPicker: false,
     })
   },
   setView: (view) => set({ view }),
@@ -228,8 +243,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   })),
   chatSearchQuery: '',
   setChatSearchQuery: (q) => set({ chatSearchQuery: q }),
-  chatSearchResults: [],
-  setChatSearchResults: (msgs) => set({ chatSearchResults: msgs }),
   showEmojiPicker: false,
   setShowEmojiPicker: (show) => set({ showEmojiPicker: show }),
   replyingTo: null,
@@ -244,8 +257,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   setClearDeleteConfirm: (confirm) => set({ clearDeleteConfirm: confirm }),
   showPasswordChange: false,
   setShowPasswordChange: (show) => set({ showPasswordChange: show }),
-  showCallDialog: false,
-  setShowCallDialog: (show) => set({ showCallDialog: show }),
-  callType: null,
-  setCallType: (type) => set({ callType: type }),
+  showAvatarPicker: false,
+  setShowAvatarPicker: (show) => set({ showAvatarPicker: show }),
 }))

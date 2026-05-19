@@ -5,10 +5,7 @@ import { useAppStore } from '@/lib/store'
 import { isFirebaseConfigured } from '@/lib/firebase'
 import { loginUser, registerUser } from '@/lib/firebase-service'
 import {
-  isAccountLocked,
-  recordFailedAttempt,
-  clearLockout,
-  formatRemainingTime,
+  isAccountLocked, recordFailedAttempt, clearLockout, formatRemainingTime,
 } from '@/lib/auth-lockout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -79,27 +76,22 @@ export function AuthForm() {
 
   if (!firebaseReady) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0b141a] p-4">
-        <div className="w-full max-w-md bg-[#1f2c34] rounded-2xl border border-[#2a3942] overflow-hidden">
-          <div className="p-6 text-center">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
-              <AlertTriangle className="w-8 h-8 text-white" />
-            </div>
-            <h2 className="text-xl font-bold text-[#e9edef] mb-2">Firebase Setup Required</h2>
-            <p className="text-sm text-[#8696a0] mb-4">This chat app requires Firebase for real-time messaging.</p>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4">
+        <div className="w-full max-w-md bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 p-8 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-amber-500/20">
+            <AlertTriangle className="w-8 h-8 text-white" />
           </div>
-          <div className="px-6 pb-6 space-y-3 text-sm text-[#e9edef]">
-            <p className="font-medium text-amber-400">Setup steps:</p>
-            <ol className="list-decimal list-inside space-y-1.5 text-[#8696a0]">
-              <li>Go to <a href="https://console.firebase.google.com/" target="_blank" className="text-blue-400 underline">Firebase Console</a></li>
-              <li>Create a new project (free)</li>
-              <li>Enable Authentication with Email/Password</li>
-              <li>Create a Firestore Database</li>
-              <li>Create a Realtime Database</li>
-              <li>Add a Web App & copy config</li>
-              <li>Edit <code className="bg-[#2a3942] px-1 rounded text-xs">src/lib/firebase.ts</code></li>
-            </ol>
-          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Firebase Setup Required</h2>
+          <p className="text-sm text-slate-400 mb-4">This chat app requires Firebase for real-time messaging.</p>
+          <ol className="list-decimal list-inside space-y-1.5 text-slate-400 text-sm text-left">
+            <li>Go to <a href="https://console.firebase.google.com/" target="_blank" className="text-sky-400 underline">Firebase Console</a></li>
+            <li>Create a new project (free)</li>
+            <li>Enable Authentication with Email/Password</li>
+            <li>Create a Firestore Database</li>
+            <li>Create a Realtime Database</li>
+            <li>Add a Web App & copy config</li>
+            <li>Edit <code className="bg-white/10 px-1.5 py-0.5 rounded text-xs">src/lib/firebase.ts</code></li>
+          </ol>
         </div>
       </div>
     )
@@ -108,93 +100,85 @@ export function AuthForm() {
   const isLogin = view === 'login' || view === 'chat'
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0b141a] p-4">
-      {/* Background decorations */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-emerald-500/8 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-teal-500/8 rounded-full blur-3xl" />
-      </div>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4 relative overflow-hidden">
+      {/* Decorative blobs */}
+      <div className="absolute -top-40 -right-40 w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-[120px]" />
+      <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] bg-sky-500/10 rounded-full blur-[120px]" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-violet-500/5 rounded-full blur-[150px]" />
 
       <div className="w-full max-w-md relative z-10">
-        <div className="bg-[#111b21] rounded-2xl border border-[#2a3942] shadow-2xl shadow-black/40 overflow-hidden">
+        <div className="bg-white/[0.07] backdrop-blur-2xl rounded-3xl border border-white/10 shadow-2xl shadow-black/40 overflow-hidden">
           {/* Header */}
           <div className="p-8 text-center">
-            <div className="w-18 h-18 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-emerald-500/25" style={{ width: 72, height: 72 }}>
+            <div className="w-[72px] h-[72px] rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center mx-auto mb-5 shadow-xl shadow-emerald-500/25 rotate-3 hover:rotate-0 transition-transform duration-300">
               <MessageCircle className="w-9 h-9 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-[#e9edef] mb-1">
+            <h1 className="text-2xl font-bold text-white mb-1">
               {isLogin ? 'Welcome back' : 'Create account'}
             </h1>
-            <p className="text-sm text-[#8696a0]">
+            <p className="text-sm text-slate-400">
               {isLogin ? 'Sign in to continue to FurtherChat' : 'Sign up to start chatting'}
             </p>
           </div>
 
           {/* Form */}
           <div className="px-8 pb-8 space-y-4">
-            {/* Lockout Warning */}
             {lockInfo?.locked && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 flex items-center gap-3">
+              <div className="bg-red-500/10 border border-red-500/20 rounded-2xl px-4 py-3 flex items-center gap-3">
                 <Clock className="h-4 w-4 text-red-400 shrink-0" />
                 <p className="text-xs text-red-300">Account locked. Try again in <strong>{lockTimer}</strong></p>
               </div>
             )}
 
-            {/* Attempts Warning */}
             {lockInfo && !lockInfo.locked && lockInfo.attemptsLeft < 3 && (
-              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 flex items-center gap-3">
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl px-4 py-3 flex items-center gap-3">
                 <Shield className="h-4 w-4 text-amber-400 shrink-0" />
                 <p className="text-xs text-amber-300">{lockInfo.attemptsLeft} attempt{lockInfo.attemptsLeft !== 1 ? 's' : ''} remaining before lockout</p>
               </div>
             )}
 
-            {/* Error */}
             {error && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 flex items-center gap-3">
+              <div className="bg-red-500/10 border border-red-500/20 rounded-2xl px-4 py-3 flex items-center gap-3">
                 <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
                 <p className="text-xs text-red-300">{error}</p>
               </div>
             )}
 
             <form onSubmit={isLogin ? handleLogin : handleRegister} className="space-y-4">
-              {/* Display Name (Register only) */}
               {!isLogin && (
                 <div className="space-y-1.5">
-                  <Label className="text-[#8696a0] text-xs font-medium">Display Name</Label>
+                  <Label className="text-slate-400 text-xs font-medium">Display Name</Label>
                   <div className="relative">
-                    <UserPlus className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#8696a0]" />
+                    <UserPlus className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                     <Input type="text" placeholder="Your display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)}
-                      className="pl-11 h-11 bg-[#2a3942] border-0 text-[#e9edef] placeholder:text-[#667781] rounded-xl focus-visible:ring-1 focus-visible:ring-emerald-500/30" required={!isLogin} />
+                      className="pl-11 h-11 bg-white/5 border-white/10 text-white placeholder:text-slate-500 rounded-xl focus-visible:ring-1 focus-visible:ring-emerald-500/30 focus-visible:border-emerald-500/30" required={!isLogin} />
                   </div>
                 </div>
               )}
 
-              {/* Username */}
               <div className="space-y-1.5">
-                <Label className="text-[#8696a0] text-xs font-medium">Username</Label>
+                <Label className="text-slate-400 text-xs font-medium">Username</Label>
                 <div className="relative">
-                  <LogIn className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#8696a0]" />
+                  <LogIn className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                   <Input type="text" placeholder="Enter your username" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-                    className="pl-11 h-11 bg-[#2a3942] border-0 text-[#e9edef] placeholder:text-[#667781] rounded-xl focus-visible:ring-1 focus-visible:ring-emerald-500/30" required disabled={lockInfo?.locked || false} />
+                    className="pl-11 h-11 bg-white/5 border-white/10 text-white placeholder:text-slate-500 rounded-xl focus-visible:ring-1 focus-visible:ring-emerald-500/30 focus-visible:border-emerald-500/30" required disabled={lockInfo?.locked || false} />
                 </div>
               </div>
 
-              {/* Password */}
               <div className="space-y-1.5">
-                <Label className="text-[#8696a0] text-xs font-medium">Password</Label>
+                <Label className="text-slate-400 text-xs font-medium">Password</Label>
                 <div className="relative">
-                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#8696a0]" />
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                   <Input type={showPassword ? 'text' : 'password'} placeholder="Enter your password" value={password} onChange={(e) => setPassword(e.target.value)}
-                    className="pl-11 pr-11 h-11 bg-[#2a3942] border-0 text-[#e9edef] placeholder:text-[#667781] rounded-xl focus-visible:ring-1 focus-visible:ring-emerald-500/30" required disabled={lockInfo?.locked || false} />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#8696a0] hover:text-[#e9edef] transition-colors">
+                    className="pl-11 pr-11 h-11 bg-white/5 border-white/10 text-white placeholder:text-slate-500 rounded-xl focus-visible:ring-1 focus-visible:ring-emerald-500/30 focus-visible:border-emerald-500/30" required disabled={lockInfo?.locked || false} />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors">
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
               </div>
 
-              {/* Submit */}
               <Button type="submit" disabled={loading || (lockInfo?.locked || false)}
-                className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-medium h-11 rounded-xl shadow-lg shadow-emerald-500/20 transition-all duration-200 disabled:opacity-50">
+                className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-semibold h-11 rounded-xl shadow-lg shadow-emerald-500/20 transition-all duration-200 disabled:opacity-50">
                 {loading ? (
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -204,18 +188,16 @@ export function AuthForm() {
               </Button>
             </form>
 
-            {/* Toggle */}
             <div className="text-center pt-1">
               <button onClick={() => { setView(isLogin ? 'register' : 'login'); setError(''); setLockInfo(null) }}
-                className="text-sm text-[#8696a0] hover:text-emerald-400 transition-colors">
+                className="text-sm text-slate-400 hover:text-emerald-400 transition-colors">
                 {isLogin ? "Don't have an account? Register" : 'Already have an account? Sign in'}
               </button>
             </div>
 
-            {/* Security notice */}
             <div className="flex items-center gap-2 justify-center pt-1">
-              <Shield className="h-3.5 w-3.5 text-[#667781]" />
-              <p className="text-[11px] text-[#667781]">Account locks after 3 failed attempts (1min, 2min, 3min...)</p>
+              <Shield className="h-3.5 w-3.5 text-slate-600" />
+              <p className="text-[11px] text-slate-600">Account locks after 3 failed attempts (1min, 2min, 3min...)</p>
             </div>
           </div>
         </div>

@@ -1,7 +1,3 @@
-// ============================================================
-// FIREBASE SERVICE - All Firestore/RTDB operations
-// ============================================================
-
 import {
   collection, doc, addDoc, setDoc, getDoc, getDocs,
   updateDoc, deleteDoc, query, where, orderBy, limit,
@@ -19,19 +15,12 @@ import { auth, db, rtdb } from './firebase'
 import type { User, Message, ChatRoom, ChatRequest, MessageStatus } from './store'
 import { getAvatarColor } from './store'
 
-// ============================================================
-// TYPES
-// ============================================================
-
 export interface SendChatRequestResult {
   type: 'request' | 'restored'
   roomId?: string
   requestId?: string
 }
 
-// ============================================================
-// INPUT SANITIZATION (Security)
-// ============================================================
 export function sanitizeInput(input: string, maxLength: number = 500): string {
   return input.replace(/<[^>]*>/g, '').trim().slice(0, maxLength)
 }
@@ -40,13 +29,11 @@ export function sanitizeUsername(input: string): string {
   return input.toLowerCase().replace(/[^a-z0-9_]/g, '').trim().slice(0, 20)
 }
 
-// ============================================================
-// AUTHENTICATION
-// ============================================================
-
 export function usernameToEmail(username: string): string {
   return `${username.toLowerCase().trim()}@chatapp.local`
 }
+
+// ==================== AUTH ====================
 
 export async function registerUser(username: string, password: string, displayName: string): Promise<User> {
   const cleanUsername = sanitizeUsername(username)
@@ -65,9 +52,7 @@ export async function registerUser(username: string, password: string, displayNa
     isOnline: true, lastSeen: null, usernameChangedAt: null,
     createdAt: serverTimestamp() as Timestamp,
   })
-  await setDoc(doc(db, 'usernames', cleanUsername), {
-    uid: cred.user.uid, createdAt: serverTimestamp() as Timestamp,
-  })
+  await setDoc(doc(db, 'usernames', cleanUsername), { uid: cred.user.uid, createdAt: serverTimestamp() as Timestamp })
   return { uid: cred.user.uid, username: cleanUsername, displayName: cleanDisplayName, avatar: null, avatarColor, isOnline: true, lastSeen: null, usernameChangedAt: null }
 }
 
@@ -89,10 +74,6 @@ export async function logoutUser(): Promise<void> {
   await signOut(auth)
 }
 
-// ============================================================
-// PASSWORD CHANGE
-// ============================================================
-
 export async function changeUserPassword(currentPassword: string, newPassword: string): Promise<void> {
   const user = auth.currentUser
   if (!user || !user.email) throw new Error('Not authenticated')
@@ -102,9 +83,7 @@ export async function changeUserPassword(currentPassword: string, newPassword: s
   await updatePassword(user, newPassword)
 }
 
-// ============================================================
-// PRESENCE (Real-time online/offline)
-// ============================================================
+// ==================== PRESENCE ====================
 
 export function setupPresence(uid: string): () => void {
   const presenceRef = ref(rtdb, `presence/${uid}`)
@@ -123,7 +102,7 @@ export function setupPresence(uid: string): () => void {
 
 export function listenToPresence(callback: (users: Record<string, { online: boolean; lastSeen: number }>) => void): () => void {
   const presenceRef = ref(rtdb, 'presence')
-  const unsubscribe = onValue(presenceRef, (snapshot) => {
+  onValue(presenceRef, (snapshot) => {
     const data = snapshot.val() || {}
     const users: Record<string, { online: boolean; lastSeen: number }> = {}
     Object.keys(data).forEach((uid) => {
@@ -135,9 +114,7 @@ export function listenToPresence(callback: (users: Record<string, { online: bool
   return () => off(presenceRef)
 }
 
-// ============================================================
-// CHAT ROOMS
-// ============================================================
+// ==================== CHAT ROOMS ====================
 
 export async function createDirectChatRoom(currentUid: string, otherUid: string): Promise<string> {
   const roomsRef = collection(db, 'chatRooms')
@@ -213,9 +190,7 @@ export function listenToChatRooms(uid: string, callback: (rooms: ChatRoom[]) => 
   }, (error) => { console.error('Error listening to chat rooms:', error) })
 }
 
-// ============================================================
-// MESSAGES
-// ============================================================
+// ==================== MESSAGES ====================
 
 export async function sendMessage(roomId: string, content: string, senderId: string, senderName: string, senderAvatar: string | null, senderAvatarColor: string, type: 'text' | 'image' = 'text', replyTo?: string | null, replyToContent?: string | null, replyToSender?: string | null): Promise<string> {
   const cleanContent = sanitizeInput(content, 2000)
@@ -252,7 +227,6 @@ export function listenToMessages(roomId: string, currentUid: string, callback: (
         replyTo: data.replyTo || null, replyToContent: data.replyToContent || null, replyToSender: data.replyToSender || null,
       }
     })
-    // Mark messages as read (batch)
     const unreadMsgs = msgs.filter(m => m.senderId !== currentUid && !m.readBy.includes(currentUid) && !m.deletedForEveryone && m.type !== 'system')
     if (unreadMsgs.length > 0) {
       const batch = writeBatch(db)
@@ -265,7 +239,6 @@ export function listenToMessages(roomId: string, currentUid: string, callback: (
   }, (error) => { console.error('Error listening to messages:', error) })
 }
 
-// Delete message for me only
 export async function deleteMessageForMe(roomId: string, messageId: string, uid: string): Promise<void> {
   const msgDoc = await getDoc(doc(db, 'chatRooms', roomId, 'messages', messageId))
   if (!msgDoc.exists()) return
@@ -276,7 +249,6 @@ export async function deleteMessageForMe(roomId: string, messageId: string, uid:
   }
 }
 
-// Delete message for everyone (48 hour limit, sender only)
 export async function deleteMessageForEveryone(roomId: string, messageId: string, senderId: string): Promise<void> {
   const msgDoc = await getDoc(doc(db, 'chatRooms', roomId, 'messages', messageId))
   if (!msgDoc.exists()) throw new Error('Message not found')
@@ -304,7 +276,6 @@ export async function deleteMessageForEveryone(roomId: string, messageId: string
   } catch {}
 }
 
-// Clear chat for me (keep chat in list, clear all messages)
 export async function clearChatForMe(roomId: string, uid: string): Promise<void> {
   const msgsSnap = await getDocs(collection(db, 'chatRooms', roomId, 'messages'))
   const batch = writeBatch(db)
@@ -321,7 +292,6 @@ export async function clearChatForMe(roomId: string, uid: string): Promise<void>
   if (count > 0) await batch.commit()
 }
 
-// Delete chat (remove from my chat list, allow re-requesting later)
 export async function deleteChatRoom(roomId: string, uid: string): Promise<void> {
   await clearChatForMe(roomId, uid)
   const roomDoc = await getDoc(doc(db, 'chatRooms', roomId))
@@ -329,14 +299,25 @@ export async function deleteChatRoom(roomId: string, uid: string): Promise<void>
     const data = roomDoc.data()
     const roomDeletedFor: string[] = data.deletedFor || []
     if (!roomDeletedFor.includes(uid)) {
-      await updateDoc(doc(db, 'chatRooms', roomId), { deletedFor: [...roomDeletedFor, uid] })
+      const newDeletedFor = [...roomDeletedFor, uid]
+      // If all participants have deleted, truly remove the room
+      const allParticipants = data.participants as string[]
+      const allDeleted = allParticipants.every((p: string) => newDeletedFor.includes(p))
+      if (allDeleted) {
+        // Delete all messages first
+        const msgsSnap = await getDocs(collection(db, 'chatRooms', roomId, 'messages'))
+        const batch = writeBatch(db)
+        msgsSnap.docs.forEach((d) => { batch.delete(d.ref) })
+        await batch.commit()
+        await deleteDoc(doc(db, 'chatRooms', roomId))
+      } else {
+        await updateDoc(doc(db, 'chatRooms', roomId), { deletedFor: newDeletedFor })
+      }
     }
   }
 }
 
-// ============================================================
-// USERNAME CHANGE (30 day cooldown)
-// ============================================================
+// ==================== USERNAME ====================
 
 export async function changeUsername(uid: string, newUsername: string): Promise<void> {
   const cleanUsername = sanitizeUsername(newUsername)
@@ -360,9 +341,7 @@ export async function changeUsername(uid: string, newUsername: string): Promise<
   if (oldUsername !== cleanUsername) await deleteDoc(doc(db, 'usernames', oldUsername)).catch(() => {})
 }
 
-// ============================================================
-// USERS
-// ============================================================
+// ==================== USERS ====================
 
 export async function searchUsers(q: string, currentUid: string): Promise<User[]> {
   const usersRef = collection(db, 'users')
@@ -393,15 +372,13 @@ export async function getAllUsers(currentUid: string): Promise<User[]> {
 export async function updateProfileData(uid: string, updates: { displayName?: string; avatar?: string; avatarColor?: string }): Promise<void> {
   const cleanUpdates: Record<string, string> = {}
   if (updates.displayName) cleanUpdates.displayName = sanitizeInput(updates.displayName, 30)
-  if (updates.avatar) cleanUpdates.avatar = updates.avatar
+  if (updates.avatar !== undefined) cleanUpdates.avatar = updates.avatar
   if (updates.avatarColor) cleanUpdates.avatarColor = updates.avatarColor
   await updateDoc(doc(db, 'users', uid), cleanUpdates)
   if (cleanUpdates.displayName && auth.currentUser) await updateProfile(auth.currentUser, { displayName: cleanUpdates.displayName })
 }
 
-// ============================================================
-// TYPING
-// ============================================================
+// ==================== TYPING ====================
 
 export function setTyping(roomId: string, uid: string, username: string, isTyping: boolean): void {
   const typingRef = ref(rtdb, `typing/${roomId}/${uid}`)
@@ -422,9 +399,7 @@ export function listenToTyping(roomId: string, callback: (usernames: string[]) =
   return () => off(typingRef)
 }
 
-// ============================================================
-// CHAT REQUESTS
-// ============================================================
+// ==================== CHAT REQUESTS ====================
 
 export async function sendChatRequest(
   fromUid: string, fromUsername: string, fromDisplayName: string, fromAvatar: string | null, fromAvatarColor: string,
@@ -438,22 +413,22 @@ export async function sendChatRequest(
   const snap2 = await getDocs(query(requestsRef, where('fromUid', '==', toUid), where('toUid', '==', fromUid)))
   if (snap2.docs.find(d => d.data().status === 'pending')) throw new Error('This user already sent you a request. Check your incoming requests!')
 
-  // Check for existing chat room
+  // Check for existing chat room - KEY BUG FIX: if room exists but user deleted it, RESTORE it
   const roomsSnap = await getDocs(query(collection(db, 'chatRooms'), where('type', '==', 'direct'), where('participants', 'array-contains', fromUid)))
   for (const roomDoc of roomsSnap.docs) {
     const data = roomDoc.data()
     if (data.participants.includes(toUid)) {
       const roomDeletedFor: string[] = data.deletedFor || []
-      if (!roomDeletedFor.includes(fromUid)) {
-        throw new Error('You already have a chat with this user')
+      if (roomDeletedFor.includes(fromUid)) {
+        // Room exists but was soft-deleted by current user - restore it
+        await updateDoc(doc(db, 'chatRooms', roomDoc.id), {
+          deletedFor: roomDeletedFor.filter((uid: string) => uid !== fromUid),
+          updatedAt: serverTimestamp() as Timestamp,
+        })
+        return { type: 'restored', roomId: roomDoc.id }
       }
-      // Room exists but was deleted by current user - silently restore it
-      await updateDoc(doc(db, 'chatRooms', roomDoc.id), {
-        deletedFor: roomDeletedFor.filter((uid: string) => uid !== fromUid),
-        updatedAt: serverTimestamp() as Timestamp,
-      })
-      // Return success with 'restored' type - no error thrown
-      return { type: 'restored', roomId: roomDoc.id }
+      // Room exists and is NOT deleted by current user - they have an active chat
+      throw new Error('You already have a chat with this user')
     }
   }
 

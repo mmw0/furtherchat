@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useAppStore, getAvatarColor } from '@/lib/store'
+import { useAppStore, getAvatarColor, getInitials, BUILT_IN_AVATARS } from '@/lib/store'
 import { isFirebaseConfigured } from '@/lib/firebase'
 import {
   setupPresence, listenToPresence, listenToChatRooms,
@@ -17,54 +17,65 @@ import type { Message, ThemePreset } from '@/lib/store'
 import { EmojiPicker } from '@/components/emoji-picker'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import {
   MessageCircle, Search, Users, Settings, LogOut, Send, ArrowLeft,
-  Phone, Video, Hash, Edit3, Check, X, UserPlus, UserCheck,
-  UserX, Clock, Bell, BellRing, Smile, Reply, Trash2,
-  Palette, Sun, Moon, MoreVertical, Ban, AlertTriangle, Lock,
-  Sparkles, Paperclip, Shield, ChevronRight,
+  Hash, Edit3, Check, X, UserPlus, UserCheck,
+  UserX, Clock, Bell, BellRing, Smile, Trash2,
+  Palette, Moon, MoreVertical, Shield, ChevronRight,
+  Camera, Sun, ImagePlus, Trash,
 } from 'lucide-react'
 
-// ============================================================
-// THEME CONFIG - Modern gradients and colors
-// ============================================================
-const THEME_PRESETS: Record<ThemePreset, { primary: string; primaryRgb: string; gradient: string; glow: string; name: string; bubbleMine: string; bubbleOther: string }> = {
-  emerald: { primary: 'bg-emerald-500', primaryRgb: '16,185,129', gradient: 'from-emerald-500 to-teal-500', glow: 'shadow-emerald-500/25', name: 'Emerald', bubbleMine: 'bg-emerald-600', bubbleOther: 'bg-slate-700' },
-  ocean: { primary: 'bg-blue-500', primaryRgb: '59,130,246', gradient: 'from-blue-500 to-cyan-500', glow: 'shadow-blue-500/25', name: 'Ocean', bubbleMine: 'bg-blue-600', bubbleOther: 'bg-slate-700' },
-  sunset: { primary: 'bg-orange-500', primaryRgb: '249,115,22', gradient: 'from-orange-500 to-amber-500', glow: 'shadow-orange-500/25', name: 'Sunset', bubbleMine: 'bg-orange-600', bubbleOther: 'bg-slate-700' },
-  lavender: { primary: 'bg-violet-500', primaryRgb: '139,92,246', gradient: 'from-violet-500 to-purple-500', glow: 'shadow-violet-500/25', name: 'Lavender', bubbleMine: 'bg-violet-600', bubbleOther: 'bg-slate-700' },
-  rose: { primary: 'bg-pink-500', primaryRgb: '236,72,153', gradient: 'from-pink-500 to-rose-500', glow: 'shadow-pink-500/25', name: 'Rose', bubbleMine: 'bg-pink-600', bubbleOther: 'bg-slate-700' },
-  midnight: { primary: 'bg-indigo-500', primaryRgb: '99,102,241', gradient: 'from-indigo-500 to-blue-500', glow: 'shadow-indigo-500/25', name: 'Midnight', bubbleMine: 'bg-indigo-600', bubbleOther: 'bg-slate-700' },
+const THEME_PRESETS: Record<ThemePreset, { primary: string; primaryRgb: string; gradient: string; glow: string; name: string }> = {
+  emerald: { primary: 'bg-emerald-500', primaryRgb: '16,185,129', gradient: 'from-emerald-500 to-teal-500', glow: 'shadow-emerald-500/25', name: 'Emerald' },
+  ocean: { primary: 'bg-blue-500', primaryRgb: '59,130,246', gradient: 'from-blue-500 to-cyan-500', glow: 'shadow-blue-500/25', name: 'Ocean' },
+  sunset: { primary: 'bg-orange-500', primaryRgb: '249,115,22', gradient: 'from-orange-500 to-amber-500', glow: 'shadow-orange-500/25', name: 'Sunset' },
+  lavender: { primary: 'bg-violet-500', primaryRgb: '139,92,246', gradient: 'from-violet-500 to-purple-500', glow: 'shadow-violet-500/25', name: 'Lavender' },
+  rose: { primary: 'bg-pink-500', primaryRgb: '236,72,153', gradient: 'from-pink-500 to-rose-500', glow: 'shadow-pink-500/25', name: 'Rose' },
+  midnight: { primary: 'bg-indigo-500', primaryRgb: '99,102,241', gradient: 'from-indigo-500 to-blue-500', glow: 'shadow-indigo-500/25', name: 'Midnight' },
 }
 
-// ============================================================
-// TICK INDICATOR (WhatsApp style)
-// ============================================================
 function TickIndicator({ status, color }: { status: Message['status']; color: string }) {
   if (status === 'sent') return <svg width="14" height="9" viewBox="0 0 14 9" className="inline-block ml-1 opacity-60"><path d="M1 4.5L3.5 7L9 1" stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
   if (status === 'delivered') return <svg width="18" height="9" viewBox="0 0 18 9" className="inline-block ml-1 opacity-70"><path d="M1 4.5L3.5 7L9 1" stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/><path d="M5 4.5L7.5 7L13 1" stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
   return <svg width="18" height="9" viewBox="0 0 18 9" className="inline-block ml-1"><path d="M1 4.5L3.5 7L9 1" stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/><path d="M5 4.5L7.5 7L13 1" stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
 }
 
-// ============================================================
-// ONLINE INDICATOR
-// ============================================================
 function OnlineDot({ online, size = 'sm' }: { online: boolean; size?: 'sm' | 'md' }) {
   if (!online) return null
   const s = size === 'sm' ? 'w-3 h-3' : 'w-3.5 h-3.5'
+  const border = size === 'sm' ? 'border-2' : 'border-[2.5px]'
   return (
-    <span className={`absolute -bottom-0.5 -right-0.5 ${s} bg-emerald-500 rounded-full border-2 border-slate-900`}>
+    <span className={`absolute -bottom-0.5 -right-0.5 ${s} bg-emerald-500 rounded-full ${border} border-slate-900`}>
       <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-75" />
     </span>
   )
 }
 
-// ============================================================
-// TYPING DOTS
-// ============================================================
+function Avatar({ avatar, name, avatarColor, size = 40 }: { avatar: string | null; name: string; avatarColor: string; size?: number }) {
+  const fontSize = Math.max(size * 0.45, 12)
+  if (avatar?.startsWith('data:image')) {
+    return <img src={avatar} alt={name} className="rounded-full object-cover" style={{ width: size, height: size }} />
+  }
+  if (avatar?.startsWith('avatar_')) {
+    const av = BUILT_IN_AVATARS.find(a => a.id === avatar)
+    if (av) {
+      return (
+        <div className="rounded-full flex items-center justify-center" style={{ width: size, height: size, background: av.bg }}>
+          <span style={{ fontSize }}>{av.emoji}</span>
+        </div>
+      )
+    }
+  }
+  const initials = getInitials(name)
+  return (
+    <div className="rounded-full flex items-center justify-center font-bold text-white" style={{ width: size, height: size, background: avatarColor, fontSize: fontSize * 0.85 }}>
+      {initials}
+    </div>
+  )
+}
+
 function TypingDots() {
   return (
     <span className="inline-flex items-center gap-0.5 ml-1">
@@ -75,9 +86,6 @@ function TypingDots() {
   )
 }
 
-// ============================================================
-// MAIN CHAT APP
-// ============================================================
 export function ChatApp() {
   const store = useAppStore()
   const { currentUser, chatRooms, setChatRooms, activeRoomId, setActiveRoomId,
@@ -89,7 +97,7 @@ export function ChatApp() {
     contextMenuMessage, setContextMenuMessage, chatSearchQuery, setChatSearchQuery,
     deleteConfirm, setDeleteConfirm, chatActionMenu, setChatActionMenu,
     clearDeleteConfirm, setClearDeleteConfirm, showPasswordChange, setShowPasswordChange,
-    logout } = store
+    showAvatarPicker, setShowAvatarPicker, logout } = store
 
   const [messageInput, setMessageInput] = useState('')
   const [showNewGroup, setShowNewGroup] = useState(false)
@@ -107,9 +115,7 @@ export function ChatApp() {
   const [editingUsername, setEditingUsername] = useState(false)
   const [newUsername, setNewUsername] = useState('')
   const [usernameError, setUsernameError] = useState('')
-  const [chatSearchOpen, setChatSearchOpen] = useState(false)
   const [deletingMsg, setDeletingMsg] = useState(false)
-  const [deleteError, setDeleteError] = useState('')
   const [clearingChat, setClearingChat] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -122,12 +128,11 @@ export function ChatApp() {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const listenersRef = useRef<(() => void)[]>([])
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const messageContainerRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const preset = theme.preset
   const tp = THEME_PRESETS[preset]
   const isDark = theme.mode === 'dark'
-  const fontSizeClass = theme.fontSize === 'small' ? 'text-xs' : theme.fontSize === 'large' ? 'text-base' : 'text-sm'
   const pendingReceivedCount = receivedRequests.filter(r => r.status === 'pending').length
 
   // ---- LISTENERS ----
@@ -183,23 +188,20 @@ export function ChatApp() {
   const handleSendRequest = useCallback(async (toUser: any) => {
     if (!currentUser) return
     setSendingRequest(toUser.uid)
-    setRequestError('')
-    setRequestSuccess('')
+    setRequestError(''); setRequestSuccess('')
     try {
       const result = await sendChatRequest(
         currentUser.uid, currentUser.username, currentUser.displayName, currentUser.avatar, currentUser.avatarColor,
         toUser.uid, toUser.username, toUser.displayName, toUser.avatar, toUser.avatarColor
       )
       if (result.type === 'restored') {
-        setRequestSuccess('Chat restored!')
-        setSidebarTab('chats')
-        setTimeout(() => setRequestSuccess(''), 3000)
+        setRequestSuccess('Chat restored!'); setSidebarTab('chats')
       } else {
         setRequestSuccess('Request sent!')
-        setTimeout(() => setRequestSuccess(''), 3000)
       }
+      setTimeout(() => { setRequestSuccess(''); setRequestError('') }, 3000)
     } catch (err: any) {
-      setRequestError(err.message)
+      setRequestError(err.message); setTimeout(() => setRequestError(''), 5000)
     } finally { setSendingRequest(null) }
   }, [currentUser])
 
@@ -209,9 +211,7 @@ export function ChatApp() {
     try {
       const roomId = await acceptChatRequest(reqId, fromUid, currentUser.uid)
       updateRequestStatus(reqId, 'accepted', roomId)
-      setActiveRoomId(roomId)
-      setShowMobileChat(true)
-      setSidebarTab('chats')
+      setActiveRoomId(roomId); setShowMobileChat(true); setSidebarTab('chats')
     } catch (err) { console.error(err) } finally { setAcceptingRequest(null) }
   }, [currentUser])
 
@@ -243,7 +243,7 @@ export function ChatApp() {
 
   const handleDeleteMsg = useCallback(async (msg: Message, forEveryone: boolean) => {
     if (!activeRoomId || !currentUser) return
-    setDeletingMsg(true); setDeleteError('')
+    setDeletingMsg(true)
     try {
       if (forEveryone) {
         await deleteMessageForEveryone(activeRoomId, msg.id, currentUser.uid)
@@ -253,7 +253,7 @@ export function ChatApp() {
         updateMessage(activeRoomId, msg.id, { deletedFor: [...msg.deletedFor, currentUser.uid] })
       }
       setContextMenuMessage(null); setDeleteConfirm(null)
-    } catch (err: any) { setDeleteError(err.message || 'Failed to delete') } finally { setDeletingMsg(false) }
+    } catch (err: any) { console.error(err) } finally { setDeletingMsg(false) }
   }, [activeRoomId, currentUser])
 
   const handleClearChat = useCallback(async (roomId: string, action: 'clear' | 'delete') => {
@@ -296,14 +296,59 @@ export function ChatApp() {
     } finally { setChangingPassword(false) }
   }, [currentPassword, newPassword, confirmPassword])
 
+  const handleAvatarUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !currentUser) return
+    if (file.size > 5 * 1024 * 1024) { alert('Image must be less than 5MB'); return }
+    const reader = new FileReader()
+    reader.onload = async (ev) => {
+      const dataUrl = ev.target?.result as string
+      // Compress if > 200KB
+      let finalUrl = dataUrl
+      if (dataUrl.length > 200 * 1024) {
+        const img = new Image()
+        img.onload = async () => {
+          const canvas = document.createElement('canvas')
+          const maxDim = 200
+          let w = img.width, h = img.height
+          if (w > h) { if (w > maxDim) { h = h * maxDim / w; w = maxDim } }
+          else { if (h > maxDim) { w = w * maxDim / h; h = maxDim } }
+          canvas.width = w; canvas.height = h
+          canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+          finalUrl = canvas.toDataURL('image/jpeg', 0.7)
+          await updateProfileData(currentUser.uid, { avatar: finalUrl })
+          useAppStore.getState().setAuth({ ...currentUser, avatar: finalUrl })
+        }
+        img.src = dataUrl
+      } else {
+        await updateProfileData(currentUser.uid, { avatar: finalUrl })
+        useAppStore.getState().setAuth({ ...currentUser, avatar: finalUrl })
+      }
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }, [currentUser])
+
+  const handleSelectBuiltInAvatar = useCallback(async (avatarId: string) => {
+    if (!currentUser) return
+    await updateProfileData(currentUser.uid, { avatar: avatarId })
+    useAppStore.getState().setAuth({ ...currentUser, avatar: avatarId })
+    setShowAvatarPicker(false)
+  }, [currentUser])
+
+  const handleRemoveAvatar = useCallback(async () => {
+    if (!currentUser) return
+    await updateProfileData(currentUser.uid, { avatar: null as any })
+    useAppStore.getState().setAuth({ ...currentUser, avatar: null })
+    setShowAvatarPicker(false)
+  }, [currentUser])
+
   // ---- DERIVED STATE ----
   const activeRoom = chatRooms.find(r => r.id === activeRoomId)
   const activeMessages = activeRoomId ? (messages[activeRoomId] || []) : []
   const activeTyping = activeRoomId ? (typingUsers[activeRoomId] || []) : []
   const filteredRooms = chatRooms.filter(room => !searchQuery || (room.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
-  const searchFilteredMsgs = chatSearchQuery ? activeMessages.filter(m => !m.deletedForEveryone && !m.deletedFor.includes(currentUser?.uid || '') && m.content.toLowerCase().includes(chatSearchQuery.toLowerCase())) : []
 
-  const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
   const formatTime = (ts: number) => { const d = new Date(ts); return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
   const formatLastSeen = (ts: number) => {
     const d = new Date(ts); const now = new Date()
@@ -311,63 +356,69 @@ export function ChatApp() {
     return `last seen ${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} at ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
   }
 
-  // ---- COLOR SCHEME ----
-  const colors = isDark ? {
-    bg: 'bg-[#0b141a]', sidebar: 'bg-[#111b21]', card: 'bg-[#1f2c34]',
-    hover: 'hover:bg-[#202c33]', border: 'border-[#2a3942]', input: 'bg-[#2a3942] border-[#2a3942]',
-    text: 'text-[#e9edef]', muted: 'text-[#8696a0]', sub: 'text-[#8696a0]',
-    bubbleMine: 'bg-[#005c4b]', bubbleOther: 'bg-[#1f2c34]',
-    headerBg: 'bg-[#202c33]', panelBg: 'bg-[#111b21]',
+  // ---- COLORS ----
+  const c = isDark ? {
+    bg: 'bg-[#0a0f1a]', sidebar: 'bg-[#0f1525]', card: 'bg-white/5',
+    hover: 'hover:bg-white/5', border: 'border-white/8', input: 'bg-white/5 border-white/10',
+    text: 'text-white', muted: 'text-slate-400', sub: 'text-slate-500',
+    bubbleMine: `bg-gradient-to-br from-[${tp.primaryRgb}33] to-[${tp.primaryRgb}1a] border border-[${tp.primaryRgb}33]`,
+    bubbleOther: 'bg-white/5 border border-white/8',
+    headerBg: 'bg-[#0f1525]/80 backdrop-blur-xl', panelBg: 'bg-[#0f1525]',
   } : {
-    bg: 'bg-[#f0f2f5]', sidebar: 'bg-[#ffffff]', card: 'bg-[#ffffff]',
-    hover: 'hover:bg-[#f5f6f6]', border: 'border-[#e9edef]', input: 'bg-[#f0f2f5] border-[#e9edef]',
-    text: 'text-[#111b21]', muted: 'text-[#667781]', sub: 'text-[#667781]',
-    bubbleMine: 'bg-[#d9fdd3]', bubbleOther: 'bg-[#ffffff]',
-    headerBg: 'bg-[#f0f2f5]', panelBg: 'bg-[#ffffff]',
+    bg: 'bg-slate-50', sidebar: 'bg-white', card: 'bg-slate-50',
+    hover: 'hover:bg-slate-50', border: 'border-slate-200', input: 'bg-slate-100 border-slate-200',
+    text: 'text-slate-900', muted: 'text-slate-500', sub: 'text-slate-400',
+    bubbleMine: `bg-gradient-to-br from-[${tp.primaryRgb}22] to-[${tp.primaryRgb}11] border border-[${tp.primaryRgb}33]`,
+    bubbleOther: 'bg-white border border-slate-200',
+    headerBg: 'bg-white/80 backdrop-blur-xl', panelBg: 'bg-white',
   }
 
+  const otherUidInActiveRoom = activeRoom?.type === 'direct' ? activeRoom.participants.find(p => p !== currentUser?.uid) : null
+  const otherIsOnline = otherUidInActiveRoom ? !!onlineUsers[otherUidInActiveRoom] : false
+
   return (
-    <div className={`h-screen flex overflow-hidden ${colors.bg} transition-colors duration-200`}>
+    <div className={`h-screen flex overflow-hidden ${c.bg} transition-colors duration-300`}>
       {/* ====== SIDEBAR ====== */}
-      <div className={`${showMobileChat ? 'hidden md:flex' : 'flex'} w-full md:w-[380px] lg:w-[420px] flex-col shrink-0 border-r ${colors.border} ${colors.sidebar} transition-colors duration-200`}>
+      <div className={`${showMobileChat ? 'hidden md:flex' : 'flex'} w-full md:w-[380px] lg:w-[420px] flex-col shrink-0 border-r ${c.border} ${c.sidebar} transition-colors duration-300`}>
         {/* Header */}
-        <div className={`px-4 py-3 ${colors.headerBg} flex items-center justify-between`}>
+        <div className={`px-4 py-3 ${c.headerBg} border-b ${c.border} flex items-center justify-between`}>
           <div className="flex items-center gap-3">
-            <div className="relative">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-sm" style={{ background: `linear-gradient(135deg, ${tp.primaryRgb}, ${tp.primaryRgb}88)` }}>
-                {currentUser ? getInitials(currentUser.displayName) : '?'}
+            <div className="relative cursor-pointer" onClick={() => setShowAvatarPicker(true)}>
+              <Avatar avatar={currentUser?.avatar || null} name={currentUser?.displayName || ''} avatarColor={currentUser?.avatarColor || ''} size={40} />
+              <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-slate-700 rounded-full flex items-center justify-center border-2 border-[#0f1525]">
+                <Camera className="w-2 h-2 text-white" />
               </div>
-              <OnlineDot online={!!onlineUsers[currentUser?.uid || '']} size="sm" />
             </div>
             <div className="min-w-0">
-              <h2 className={`font-semibold text-sm truncate ${colors.text}`}>{currentUser?.displayName}</h2>
-              <p className={`text-[11px] ${colors.muted}`}>@{currentUser?.username}</p>
+              <h2 className={`font-semibold text-sm truncate ${c.text}`}>{currentUser?.displayName}</h2>
+              <p className={`text-[11px] ${c.muted}`}>@{currentUser?.username}</p>
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            <button onClick={() => setSidebarTab('settings')} className={`p-2 rounded-full ${colors.hover} ${colors.muted} hover:text-white transition-colors`}><Settings className="h-4 w-4" /></button>
-            <button onClick={handleLogout} className={`p-2 rounded-full ${colors.hover} ${colors.muted} hover:text-red-400 transition-colors`}><LogOut className="h-4 w-4" /></button>
+          <div className="flex items-center gap-0.5">
+            <button onClick={() => setSidebarTab('settings')} className={`p-2 rounded-xl ${c.hover} ${c.muted} hover:text-white transition-colors`}><Settings className="h-4 w-4" /></button>
+            <button onClick={handleLogout} className={`p-2 rounded-xl ${c.hover} ${c.muted} hover:text-red-400 transition-colors`}><LogOut className="h-4 w-4" /></button>
           </div>
         </div>
 
         {/* Search */}
-        <div className={`px-3 py-2 ${colors.sidebar}`}>
+        <div className="px-3 py-2">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#8696a0]" />
-            <Input placeholder="Search or start new chat" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className={`pl-10 h-9 rounded-lg text-sm ${colors.input} ${colors.text} placeholder:text-[#8696a0] border-0 focus-visible:ring-1 focus-visible:ring-emerald-500/30`} />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+            <Input placeholder="Search or start new chat" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              className={`pl-10 h-9 rounded-xl text-sm ${c.input} ${c.text} placeholder:text-slate-500 border focus-visible:ring-1 focus-visible:ring-emerald-500/30`} />
           </div>
         </div>
 
         {/* Tabs */}
-        <div className={`flex ${colors.border} border-b`}>
+        <div className={`flex ${c.border} border-b`}>
           {([['chats', MessageCircle, 'Chats'], ['users', Users, 'Users'], ['requests', pendingReceivedCount > 0 ? BellRing : Bell, 'Requests']] as const).map(([tab, Icon, label]) => (
             <button key={tab} onClick={() => { setSidebarTab(tab as any); setRequestError(''); setRequestSuccess('') }}
-              className={`flex-1 py-2.5 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all relative ${sidebarTab === tab ? colors.text : colors.muted}`}>
+              className={`flex-1 py-2.5 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all relative ${sidebarTab === tab ? c.text : c.muted}`}>
               <Icon className="h-3.5 w-3.5" />{label}
               {tab === 'requests' && pendingReceivedCount > 0 && (
-                <span className="absolute -top-0.5 right-2 bg-emerald-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">{pendingReceivedCount}</span>
+                <span className="absolute -top-0.5 right-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">{pendingReceivedCount}</span>
               )}
-              {sidebarTab === tab && <div className={`absolute bottom-0 left-[30%] right-[30%] h-[3px] rounded-full bg-gradient-to-r ${tp.gradient}`} />}
+              {sidebarTab === tab && <div className={`absolute bottom-0 left-[25%] right-[25%] h-[2.5px] rounded-full bg-gradient-to-r ${tp.gradient}`} />}
             </button>
           ))}
         </div>
@@ -377,12 +428,12 @@ export function ChatApp() {
           {/* CHATS TAB */}
           {sidebarTab === 'chats' && (filteredRooms.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 px-4">
-              <div className={`w-20 h-20 rounded-full bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-4 shadow-xl ${tp.glow}`}>
+              <div className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-4 shadow-xl ${tp.glow}`}>
                 <MessageCircle className="h-9 w-9 text-white" />
               </div>
-              <p className={`text-sm ${colors.muted} text-center mb-3`}>No conversations yet</p>
-              <p className={`text-xs ${colors.muted} text-center max-w-[200px] mb-4`}>Find users and send a chat request to start messaging</p>
-              <Button onClick={() => setSidebarTab('users')} className={`bg-gradient-to-r ${tp.gradient} text-white text-xs h-9 rounded-full px-6 shadow-lg ${tp.glow}`}>
+              <p className={`text-sm ${c.muted} text-center mb-3`}>No conversations yet</p>
+              <p className={`text-xs ${c.sub} text-center max-w-[200px] mb-4`}>Find users and send a chat request to start messaging</p>
+              <Button onClick={() => setSidebarTab('users')} className={`bg-gradient-to-r ${tp.gradient} text-white text-xs h-9 rounded-xl px-6 shadow-lg ${tp.glow}`}>
                 <UserPlus className="h-3.5 w-3.5 mr-1.5" />Find Users
               </Button>
             </div>
@@ -393,27 +444,24 @@ export function ChatApp() {
             const lastMsg = room.lastMessage
             return (
               <button key={room.id} onClick={() => { setActiveRoomId(room.id); setShowMobileChat(true) }}
-                className={`w-full flex items-center gap-3 px-4 py-3 transition-all ${isActive ? (isDark ? 'bg-[#2a3942]' : 'bg-[#f0f2f5]') : colors.hover}`}>
+                className={`w-full flex items-center gap-3 px-4 py-3 transition-all ${isActive ? (isDark ? 'bg-white/8' : 'bg-slate-100') : c.hover}`}>
                 <div className="relative shrink-0">
-                  <div className="w-12 h-12 rounded-full flex items-center justify-center font-bold text-white text-sm"
-                    style={{ background: room.avatarColor || getAvatarColor(room.id) }}>
-                    {room.type === 'group' ? <Hash className="h-5 w-5" /> : getInitials(room.name || 'U')}
-                  </div>
+                  <Avatar avatar={room.avatar} name={room.name || 'Chat'} avatarColor={room.avatarColor || getAvatarColor(room.id)} size={48} />
                   <OnlineDot online={isOn} />
                 </div>
-                <div className="flex-1 min-w-0 text-left border-b ${isDark ? 'border-[#222d34]' : 'border-[#e9edef]'} pb-3">
+                <div className={`flex-1 min-w-0 text-left border-b ${c.border} pb-3`}>
                   <div className="flex items-center justify-between">
-                    <h3 className={`font-semibold text-[15px] truncate ${colors.text}`}>{room.name || 'Chat'}</h3>
-                    {lastMsg && <span className={`text-[11px] ${lastMsg.createdAt > Date.now() - 60000 ? 'text-emerald-400' : colors.muted} shrink-0 ml-2`}>{formatTime(lastMsg.createdAt)}</span>}
+                    <h3 className={`font-semibold text-[14px] truncate ${c.text}`}>{room.name || 'Chat'}</h3>
+                    {lastMsg && <span className={`text-[10px] ${lastMsg.createdAt > Date.now() - 60000 ? 'text-emerald-400' : c.muted} shrink-0 ml-2`}>{formatTime(lastMsg.createdAt)}</span>}
                   </div>
                   <div className="flex items-center gap-1 mt-0.5">
                     {lastMsg && lastMsg.senderId === currentUser?.uid && <TickIndicator status={lastMsg.status} color={lastMsg.status === 'read' ? '#53bdeb' : '#8696a0'} />}
                     {lastMsg ? (
-                      <p className={`text-[13px] truncate ${colors.muted}`}>
-                        {lastMsg.type === 'deleted' ? '🚫 Message deleted' : room.type === 'group' ? `${lastMsg.senderName}: ${lastMsg.content}` : lastMsg.senderId === currentUser?.uid ? lastMsg.content : lastMsg.content}
+                      <p className={`text-[12px] truncate ${c.muted}`}>
+                        {lastMsg.type === 'deleted' ? 'Message deleted' : room.type === 'group' ? `${lastMsg.senderName}: ${lastMsg.content}` : lastMsg.content}
                       </p>
                     ) : (
-                      <p className={`text-[13px] ${colors.muted}`}>No messages yet</p>
+                      <p className={`text-[12px] ${c.muted}`}>No messages yet</p>
                     )}
                   </div>
                 </div>
@@ -425,54 +473,51 @@ export function ChatApp() {
           {sidebarTab === 'users' && (
             <div>
               <div className="p-3 space-y-2">
-                <Button onClick={() => setShowNewGroup(true)} variant="outline" className={`w-full justify-start gap-2 rounded-xl h-10 ${isDark ? 'border-[#2a3942] hover:bg-[#202c33] text-[#e9edef]' : 'border-[#e9edef] hover:bg-[#f5f6f6] text-[#111b21]'}`}>
+                <Button onClick={() => setShowNewGroup(true)} variant="outline" className={`w-full justify-start gap-2 rounded-xl h-10 ${isDark ? 'border-white/10 hover:bg-white/5 text-white' : 'border-slate-200 hover:bg-slate-50 text-slate-900'}`}>
                   <Users className="h-4 w-4 text-violet-400" />Create Group Chat
                 </Button>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#8696a0]" />
-                  <Input placeholder="Search users by name or username..." value={userSearch} onChange={(e) => {
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                  <Input placeholder="Search users..." value={userSearch} onChange={(e) => {
                     setUserSearch(e.target.value)
                     if (!e.target.value.trim()) { setSearchResults(allUsers) }
                     else { searchUsers(e.target.value, currentUser!.uid).then(setSearchResults).catch(() => setSearchResults(allUsers.filter(u => u.username.includes(e.target.value.toLowerCase()) || u.displayName.toLowerCase().includes(e.target.value.toLowerCase())))) }
-                  }} className={`pl-10 h-9 rounded-lg text-sm ${colors.input} ${colors.text} placeholder:text-[#8696a0] border-0 focus-visible:ring-1 focus-visible:ring-emerald-500/30`} />
+                  }} className={`pl-10 h-9 rounded-xl text-sm ${c.input} ${c.text} placeholder:text-slate-500 border focus-visible:ring-1 focus-visible:ring-emerald-500/30`} />
                 </div>
-                {requestError && <div className="text-xs text-red-400 bg-red-500/10 rounded-lg px-3 py-2">{requestError}</div>}
-                {requestSuccess && <div className="text-xs text-emerald-400 bg-emerald-500/10 rounded-lg px-3 py-2">{requestSuccess}</div>}
+                {requestError && <div className="text-xs text-red-400 bg-red-500/10 rounded-xl px-3 py-2">{requestError}</div>}
+                {requestSuccess && <div className="text-xs text-emerald-400 bg-emerald-500/10 rounded-xl px-3 py-2">{requestSuccess}</div>}
               </div>
               {(userSearch ? searchResults : allUsers).map((user) => {
                 const isOn = !!onlineUsers[user.uid]
                 const p = hasPendingRequest(user.uid)
                 const ec = hasExistingChat(user.uid)
                 return (
-                  <div key={user.uid} className={`flex items-center gap-3 px-4 py-3 ${colors.hover} transition-colors`}>
+                  <div key={user.uid} className={`flex items-center gap-3 px-4 py-3 ${c.hover} transition-colors`}>
                     <div className="relative shrink-0">
-                      <div className="w-11 h-11 rounded-full flex items-center justify-center font-bold text-white text-xs"
-                        style={{ background: user.avatarColor || getAvatarColor(user.uid) }}>
-                        {getInitials(user.displayName)}
-                      </div>
+                      <Avatar avatar={user.avatar} name={user.displayName} avatarColor={user.avatarColor || getAvatarColor(user.uid)} size={44} />
                       <OnlineDot online={isOn} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className={`font-medium text-[14px] truncate ${colors.text}`}>{user.displayName}</p>
-                      <p className={`text-[12px] ${colors.muted}`}>
+                      <p className={`font-medium text-[14px] truncate ${c.text}`}>{user.displayName}</p>
+                      <p className={`text-[11px] ${c.muted}`}>
                         @{user.username} · <span className={isOn ? 'text-emerald-400' : ''}>{isOn ? 'online' : 'offline'}</span>
                       </p>
                     </div>
                     <div className="shrink-0">
                       {ec ? (
-                        <Badge className={`${isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'} text-[10px] rounded-full px-2.5 border-0`}>
+                        <Badge className={`${isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'} text-[10px] rounded-lg px-2 border-0`}>
                           <MessageCircle className="h-3 w-3 mr-1" />Chat
                         </Badge>
                       ) : p.sent ? (
-                        <Badge className={`${isDark ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-600'} text-[10px] rounded-full px-2.5 border-0`}>
+                        <Badge className={`${isDark ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-600'} text-[10px] rounded-lg px-2 border-0`}>
                           <Clock className="h-3 w-3 mr-1" />Sent
                         </Badge>
                       ) : p.received ? (
-                        <Badge className={`${isDark ? 'bg-blue-500/15 text-blue-400' : 'bg-blue-50 text-blue-600'} text-[10px] rounded-full px-2.5 border-0`}>
+                        <Badge className={`${isDark ? 'bg-blue-500/15 text-blue-400' : 'bg-blue-50 text-blue-600'} text-[10px] rounded-lg px-2 border-0`}>
                           <Bell className="h-3 w-3 mr-1" />Wants chat
                         </Badge>
                       ) : (
-                        <Button size="sm" className={`h-7 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 rounded-full px-3 shadow-md ${tp.glow}`}
+                        <Button size="sm" className={`h-7 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 rounded-lg px-3 shadow-md ${tp.glow}`}
                           onClick={() => handleSendRequest(user)} disabled={sendingRequest === user.uid}>
                           {sendingRequest === user.uid ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><UserPlus className="h-3 w-3" />Request</>}
                         </Button>
@@ -487,82 +532,80 @@ export function ChatApp() {
           {/* REQUESTS TAB */}
           {sidebarTab === 'requests' && (
             <div>
-              <div className="px-4 py-2"><h3 className={`text-[12px] font-bold uppercase tracking-wider ${colors.muted}`}>Incoming {receivedRequests.filter(r => r.status === 'pending').length > 0 && `(${receivedRequests.filter(r => r.status === 'pending').length})`}</h3></div>
+              <div className="px-4 py-2"><h3 className={`text-[11px] font-bold uppercase tracking-wider ${c.muted}`}>Incoming {receivedRequests.filter(r => r.status === 'pending').length > 0 && `(${receivedRequests.filter(r => r.status === 'pending').length})`}</h3></div>
               {receivedRequests.length === 0 ? (
-                <p className={`text-sm text-center py-8 ${colors.muted}`}>No requests yet</p>
+                <p className={`text-sm text-center py-8 ${c.muted}`}>No requests yet</p>
               ) : receivedRequests.map((req) => (
-                <div key={req.id} className={`px-4 py-3 ${colors.border} border-b`}>
+                <div key={req.id} className={`px-4 py-3 ${c.border} border-b`}>
                   <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-full flex items-center justify-center font-bold text-white text-xs shrink-0"
-                      style={{ background: req.fromAvatarColor || getAvatarColor(req.fromUid) }}>
-                      {getInitials(req.fromDisplayName)}
+                    <div className="shrink-0">
+                      <Avatar avatar={req.fromAvatar} name={req.fromDisplayName} avatarColor={req.fromAvatarColor || getAvatarColor(req.fromUid)} size={44} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className={`font-medium text-[14px] truncate ${colors.text}`}>{req.fromDisplayName}</p>
+                        <p className={`font-medium text-[14px] truncate ${c.text}`}>{req.fromDisplayName}</p>
                         {req.status === 'pending' && <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />}
                       </div>
-                      <p className={`text-[12px] ${colors.muted}`}>@{req.fromUsername}</p>
-                      {req.message && <p className={`text-[12px] mt-0.5 italic ${colors.sub}`}>"{req.message}"</p>}
+                      <p className={`text-[11px] ${c.muted}`}>@{req.fromUsername}</p>
+                      {req.message && <p className={`text-[11px] mt-0.5 italic ${c.sub}`}>"{req.message}"</p>}
                     </div>
                   </div>
                   {req.status === 'pending' ? (
                     <div className="flex items-center gap-2 mt-2.5 ml-14">
-                      <Button size="sm" className={`h-8 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 flex-1 rounded-full shadow-md ${tp.glow}`}
+                      <Button size="sm" className={`h-8 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 flex-1 rounded-lg shadow-md ${tp.glow}`}
                         onClick={() => handleAccept(req.id, req.fromUid)} disabled={acceptingRequest === req.id}>
                         {acceptingRequest === req.id ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><UserCheck className="h-3 w-3" />Accept</>}
                       </Button>
-                      <Button size="sm" variant="outline" className="h-8 text-[11px] gap-1 flex-1 text-red-400 border-red-500/30 hover:bg-red-500/10 rounded-full"
+                      <Button size="sm" variant="outline" className="h-8 text-[11px] gap-1 flex-1 text-red-400 border-red-500/30 hover:bg-red-500/10 rounded-lg"
                         onClick={() => handleReject(req.id)}>
                         <UserX className="h-3 w-3" />Reject
                       </Button>
                     </div>
                   ) : req.status === 'accepted' ? (
                     <div className="flex items-center gap-2 mt-2 ml-14">
-                      <Badge className={`${isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'} text-[10px] rounded-full border-0`}>
+                      <Badge className={`${isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'} text-[10px] rounded-lg border-0`}>
                         <UserCheck className="h-3 w-3 mr-1" />Accepted
                       </Badge>
                       {req.chatRoomId && <Button size="sm" variant="ghost" className="h-6 text-[10px] text-emerald-400 hover:text-emerald-300" onClick={() => { setActiveRoomId(req.chatRoomId!); setShowMobileChat(true) }}>Chat <ChevronRight className="h-3 w-3" /></Button>}
                     </div>
                   ) : (
-                    <Badge className={`${isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-600'} text-[10px] mt-2 ml-14 rounded-full border-0`}>
+                    <Badge className={`${isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-600'} text-[10px] mt-2 ml-14 rounded-lg border-0`}>
                       <UserX className="h-3 w-3 mr-1" />Rejected
                     </Badge>
                   )}
                 </div>
               ))}
-              <Separator className={`${colors.border} my-1`} />
-              <div className="px-4 py-2"><h3 className={`text-[12px] font-bold uppercase tracking-wider ${colors.muted}`}>Sent {sentRequests.filter(r => r.status === 'pending').length > 0 && `(${sentRequests.filter(r => r.status === 'pending').length})`}</h3></div>
+              <div className={`${c.border} border-t my-1`} />
+              <div className="px-4 py-2"><h3 className={`text-[11px] font-bold uppercase tracking-wider ${c.muted}`}>Sent {sentRequests.filter(r => r.status === 'pending').length > 0 && `(${sentRequests.filter(r => r.status === 'pending').length})`}</h3></div>
               {sentRequests.length === 0 ? (
-                <p className={`text-sm text-center py-8 ${colors.muted}`}>No sent requests</p>
+                <p className={`text-sm text-center py-8 ${c.muted}`}>No sent requests</p>
               ) : sentRequests.map((req) => (
-                <div key={req.id} className={`px-4 py-3 ${colors.border} border-b`}>
+                <div key={req.id} className={`px-4 py-3 ${c.border} border-b`}>
                   <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-full flex items-center justify-center font-bold text-white text-xs shrink-0"
-                      style={{ background: req.toAvatarColor || getAvatarColor(req.toUid) }}>
-                      {getInitials(req.toDisplayName)}
+                    <div className="shrink-0">
+                      <Avatar avatar={req.toAvatar} name={req.toDisplayName} avatarColor={req.toAvatarColor || getAvatarColor(req.toUid)} size={44} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className={`font-medium text-[14px] truncate ${colors.text}`}>{req.toDisplayName}</p>
-                      <p className={`text-[12px] ${colors.muted}`}>@{req.toUsername}</p>
+                      <p className={`font-medium text-[14px] truncate ${c.text}`}>{req.toDisplayName}</p>
+                      <p className={`text-[11px] ${c.muted}`}>@{req.toUsername}</p>
                     </div>
                     <div className="shrink-0">
                       {req.status === 'pending' ? (
                         <div className="flex items-center gap-1.5">
-                          <Badge className={`${isDark ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-600'} text-[10px] rounded-full border-0`}>
+                          <Badge className={`${isDark ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-600'} text-[10px] rounded-lg border-0`}>
                             <Clock className="h-3 w-3 mr-1" />Pending
                           </Badge>
                           <button className="text-red-400 hover:text-red-300 p-1" onClick={() => cancelChatRequest(req.id).then(() => removeRequestFromList(req.id))}><X className="h-3 w-3" /></button>
                         </div>
                       ) : req.status === 'accepted' ? (
                         <div className="flex items-center gap-1">
-                          <Badge className={`${isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'} text-[10px] rounded-full border-0`}>
+                          <Badge className={`${isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'} text-[10px] rounded-lg border-0`}>
                             <UserCheck className="h-3 w-3 mr-1" />Accepted
                           </Badge>
                           {req.chatRoomId && <Button size="sm" variant="ghost" className="h-6 text-[10px] text-emerald-400 hover:text-emerald-300" onClick={() => { setActiveRoomId(req.chatRoomId!); setShowMobileChat(true) }}>Chat <ChevronRight className="h-3 w-3" /></Button>}
                         </div>
                       ) : (
-                        <Badge className={`${isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-600'} text-[10px] rounded-full border-0`}>
+                        <Badge className={`${isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-600'} text-[10px] rounded-lg border-0`}>
                           <UserX className="h-3 w-3 mr-1" />Rejected
                         </Badge>
                       )}
@@ -575,54 +618,80 @@ export function ChatApp() {
 
           {/* SETTINGS TAB */}
           {sidebarTab === 'settings' && (
-            <div className="p-4 space-y-5">
+            <div className="p-4 space-y-4">
               {/* Profile Card */}
-              <div className={`rounded-2xl p-4 ${isDark ? 'bg-[#1f2c34]' : 'bg-[#f0f2f5]'} space-y-3`}>
+              <div className={`rounded-2xl p-4 ${isDark ? 'bg-white/5' : 'bg-slate-50'} space-y-3`}>
                 <div className="flex items-center gap-3">
-                  <div className="w-14 h-14 rounded-full flex items-center justify-center font-bold text-white text-lg"
-                    style={{ background: `linear-gradient(135deg, ${tp.primaryRgb}, ${tp.primaryRgb}88)` }}>
-                    {currentUser ? getInitials(currentUser.displayName) : '?'}
+                  <div className="relative cursor-pointer" onClick={() => setShowAvatarPicker(true)}>
+                    <Avatar avatar={currentUser?.avatar || null} name={currentUser?.displayName || ''} avatarColor={currentUser?.avatarColor || ''} size={56} />
+                    <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full flex items-center justify-center shadow-md border-2 border-[#0f1525]">
+                      <Camera className="w-3 h-3 text-white" />
+                    </div>
                   </div>
                   <div className="flex-1 min-w-0">
                     {editingName ? (
                       <div className="flex items-center gap-1">
-                        <Input value={newDisplayName} onChange={(e) => setNewDisplayName(e.target.value)} className={`h-7 text-sm rounded-lg ${colors.input} ${colors.text} border-0`} onKeyDown={(e) => e.key === 'Enter' && newDisplayName.trim() && updateProfileData(currentUser!.uid, { displayName: newDisplayName.trim() }).then(() => { useAppStore.getState().setAuth({ ...currentUser!, displayName: newDisplayName.trim() }); setEditingName(false) })} />
+                        <Input value={newDisplayName} onChange={(e) => setNewDisplayName(e.target.value)} className={`h-7 text-sm rounded-lg ${c.input} ${c.text} border`} onKeyDown={(e) => e.key === 'Enter' && newDisplayName.trim() && updateProfileData(currentUser!.uid, { displayName: newDisplayName.trim() }).then(() => { useAppStore.getState().setAuth({ ...currentUser!, displayName: newDisplayName.trim() }); setEditingName(false) })} />
                         <button className="text-emerald-400 p-1" onClick={() => newDisplayName.trim() && updateProfileData(currentUser!.uid, { displayName: newDisplayName.trim() }).then(() => { useAppStore.getState().setAuth({ ...currentUser!, displayName: newDisplayName.trim() }); setEditingName(false) })}><Check className="h-4 w-4" /></button>
                         <button className="text-red-400 p-1" onClick={() => setEditingName(false)}><X className="h-4 w-4" /></button>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5">
-                        <h3 className={`font-semibold text-[15px] ${colors.text}`}>{currentUser?.displayName}</h3>
-                        <button onClick={() => { setEditingName(true); setNewDisplayName(currentUser?.displayName || '') }} className={`${colors.muted} hover:text-emerald-400`}><Edit3 className="h-3 w-3" /></button>
+                        <h3 className={`font-semibold text-[15px] ${c.text}`}>{currentUser?.displayName}</h3>
+                        <button onClick={() => { setEditingName(true); setNewDisplayName(currentUser?.displayName || '') }} className={`${c.muted} hover:text-emerald-400`}><Edit3 className="h-3 w-3" /></button>
                       </div>
                     )}
-                    <p className={`text-[12px] ${colors.muted}`}>@{currentUser?.username}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <p className={`text-[12px] ${c.muted}`}>@{currentUser?.username}</p>
+                      <button onClick={() => { setEditingUsername(true); setNewUsername(currentUser?.username || ''); setUsernameError('') }} className={`${c.muted} hover:text-emerald-400`}><Edit3 className="h-2.5 w-2.5" /></button>
+                    </div>
+                    {editingUsername && (
+                      <div className="mt-2 space-y-1">
+                        <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} className={`h-7 text-sm rounded-lg ${c.input} ${c.text} border`} placeholder="New username" />
+                        {usernameError && <p className="text-[10px] text-red-400">{usernameError}</p>}
+                        <div className="flex gap-1">
+                          <Button size="sm" className={`h-6 text-[10px] bg-gradient-to-r ${tp.gradient} text-white rounded-lg px-2`} onClick={handleChangeUsername}>Save</Button>
+                          <Button size="sm" variant="ghost" className="h-6 text-[10px] text-slate-400" onClick={() => setEditingUsername(false)}>Cancel</Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
 
+              {/* Change Avatar */}
+              <button onClick={() => setShowAvatarPicker(true)} className={`w-full flex items-center gap-3 p-3 rounded-xl ${c.hover} transition-colors text-left`}>
+                <ImagePlus className={`h-4 w-4 ${c.muted}`} />
+                <span className={`text-sm ${c.text}`}>Change Profile Picture</span>
+              </button>
+
+              {/* Change Password */}
+              <button onClick={() => setShowPasswordChange(true)} className={`w-full flex items-center gap-3 p-3 rounded-xl ${c.hover} transition-colors text-left`}>
+                <Shield className={`h-4 w-4 ${c.muted}`} />
+                <span className={`text-sm ${c.text}`}>Change Password</span>
+              </button>
+
               {/* Theme Mode */}
               <div>
-                <h3 className={`text-[11px] font-bold uppercase tracking-wider mb-2 ${colors.muted}`}>Appearance</h3>
+                <h3 className={`text-[11px] font-bold uppercase tracking-wider mb-2 ${c.muted}`}>Appearance</h3>
                 <div className="flex gap-2">
-                  <button onClick={() => setTheme({ mode: 'dark' })} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium transition-all ${isDark ? `bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow}` : `${colors.card} ${colors.text} border ${colors.border}`}`}>
+                  <button onClick={() => setTheme({ mode: 'dark' })} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium transition-all ${isDark ? `bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow}` : `${c.card} ${c.text} border ${c.border}`}`}>
                     <Moon className="h-3.5 w-3.5" />Dark
                   </button>
-                  <button onClick={() => setTheme({ mode: 'light' })} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium transition-all ${!isDark ? `bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow}` : `${colors.card} ${colors.text} border ${colors.border}`}`}>
+                  <button onClick={() => setTheme({ mode: 'light' })} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium transition-all ${!isDark ? `bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow}` : `${c.card} ${c.text} border ${c.border}`}`}>
                     <Sun className="h-3.5 w-3.5" />Light
                   </button>
                 </div>
               </div>
 
-              {/* Color Theme */}
+              {/* Theme Color */}
               <div>
-                <h3 className={`text-[11px] font-bold uppercase tracking-wider mb-2 ${colors.muted}`}>Accent Color</h3>
+                <h3 className={`text-[11px] font-bold uppercase tracking-wider mb-2 ${c.muted}`}>Accent Color</h3>
                 <div className="grid grid-cols-3 gap-2">
-                  {(Object.entries(THEME_PRESETS) as [ThemePreset, typeof tp][]).map(([key, val]) => (
+                  {(Object.entries(THEME_PRESETS) as [ThemePreset, typeof THEME_PRESETS[ThemePreset]][]).map(([key, val]) => (
                     <button key={key} onClick={() => setTheme({ preset: key })}
-                      className={`flex items-center gap-2 p-2.5 rounded-xl border-2 transition-all ${preset === key ? `border-emerald-400/50 scale-[1.02]` : `${colors.border} ${colors.hover}`}`}>
-                      <div className={`w-5 h-5 rounded-full bg-gradient-to-r ${val.gradient} shadow-sm`} />
-                      <span className={`text-[11px] font-medium ${colors.text}`}>{val.name}</span>
+                      className={`flex items-center gap-1.5 py-2 px-2.5 rounded-xl text-[11px] font-medium transition-all ${preset === key ? `bg-gradient-to-r ${val.gradient} text-white shadow-md ${val.glow}` : `${c.card} ${c.text} border ${c.border}`}`}>
+                      <div className={`w-3 h-3 rounded-full ${val.primary}`} />{val.name}
                     </button>
                   ))}
                 </div>
@@ -630,166 +699,129 @@ export function ChatApp() {
 
               {/* Font Size */}
               <div>
-                <h3 className={`text-[11px] font-bold uppercase tracking-wider mb-2 ${colors.muted}`}>Text Size</h3>
+                <h3 className={`text-[11px] font-bold uppercase tracking-wider mb-2 ${c.muted}`}>Font Size</h3>
                 <div className="flex gap-2">
-                  {(['small', 'medium', 'large'] as const).map(s => (
-                    <button key={s} onClick={() => setTheme({ fontSize: s })}
-                      className={`flex-1 py-2 rounded-xl text-xs font-medium transition-all ${theme.fontSize === s ? `bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow}` : `${colors.card} ${colors.text} border ${colors.border}`}`}>
-                      {s.charAt(0).toUpperCase() + s.slice(1)}
+                  {(['small', 'medium', 'large'] as const).map((size) => (
+                    <button key={size} onClick={() => setTheme({ fontSize: size })}
+                      className={`flex-1 py-2 rounded-xl text-xs font-medium capitalize transition-all ${theme.fontSize === size ? `bg-gradient-to-r ${tp.gradient} text-white shadow-md` : `${c.card} ${c.text} border ${c.border}`}`}>
+                      {size}
                     </button>
                   ))}
                 </div>
               </div>
-
-              {/* Account */}
-              <div>
-                <h3 className={`text-[11px] font-bold uppercase tracking-wider mb-2 ${colors.muted}`}>Account</h3>
-                <div className={`rounded-2xl p-4 ${isDark ? 'bg-[#1f2c34]' : 'bg-[#f0f2f5]'} space-y-3`}>
-                  <div className="flex items-center justify-between">
-                    <span className={`text-[12px] ${colors.muted}`}>Username</span>
-                    {editingUsername ? (
-                      <div className="flex items-center gap-1">
-                        <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} className="h-6 text-xs w-24 rounded-lg border-0" onKeyDown={(e) => e.key === 'Enter' && handleChangeUsername()} />
-                        <button className="text-emerald-400" onClick={handleChangeUsername}><Check className="h-3 w-3" /></button>
-                        <button className="text-red-400" onClick={() => { setEditingUsername(false); setUsernameError('') }}><X className="h-3 w-3" /></button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5">
-                        <span className={`text-xs font-medium ${colors.text}`}>@{currentUser?.username}</span>
-                        <button onClick={() => { setEditingUsername(true); setNewUsername('') }} className={colors.muted}><Edit3 className="h-2.5 w-2.5" /></button>
-                      </div>
-                    )}
-                  </div>
-                  {usernameError && <p className="text-[10px] text-red-400">{usernameError}</p>}
-                  {currentUser?.usernameChangedAt && <p className={`text-[10px] ${colors.muted}`}>Can change again in {Math.max(0, Math.ceil(30 - (Date.now() - currentUser.usernameChangedAt) / 86400000))} days</p>}
-                  <div className="flex items-center justify-between">
-                    <span className={`text-[12px] ${colors.muted}`}>Password</span>
-                    <button onClick={() => setShowPasswordChange(true)} className="text-xs font-medium text-emerald-400 hover:text-emerald-300">Change</button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Security */}
-              <div>
-                <h3 className={`text-[11px] font-bold uppercase tracking-wider mb-2 ${colors.muted}`}>Security</h3>
-                <div className={`rounded-2xl p-4 ${isDark ? 'bg-[#1f2c34]' : 'bg-[#f0f2f5]'} flex items-center gap-3`}>
-                  <Shield className="h-5 w-5 text-emerald-400" />
-                  <div>
-                    <p className={`text-xs font-medium ${colors.text}`}>Progressive Lockout Active</p>
-                    <p className={`text-[10px] ${colors.muted}`}>3 failed attempts → 1min lock (increasing)</p>
-                  </div>
-                </div>
-              </div>
-
-              <Button onClick={handleLogout} variant="destructive" className="w-full rounded-xl h-10">
-                <LogOut className="h-4 w-4 mr-2" />Sign Out
-              </Button>
             </div>
           )}
         </div>
       </div>
 
-      {/* ====== CHAT WINDOW ====== */}
-      <div className={`${!showMobileChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col min-w-0 ${colors.bg} transition-colors duration-200`}>
-        {activeRoom ? (
+      {/* ====== CHAT AREA ====== */}
+      <div className={`${!showMobileChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col ${c.bg} transition-colors duration-300`}>
+        {!activeRoom ? (
+          <div className="flex-1 flex flex-col items-center justify-center">
+            <div className={`w-24 h-24 rounded-3xl bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-6 shadow-2xl ${tp.glow}`}>
+              <MessageCircle className="h-12 w-12 text-white" />
+            </div>
+            <h2 className={`text-xl font-bold ${c.text} mb-2`}>FurtherChat</h2>
+            <p className={`text-sm ${c.muted} max-w-[280px] text-center`}>Select a conversation to start messaging, or find new users to chat with.</p>
+          </div>
+        ) : (
           <>
             {/* Chat Header */}
-            <div className={`flex items-center gap-3 px-4 py-2.5 ${colors.headerBg} border-b ${colors.border}`}>
-              <button onClick={() => setShowMobileChat(false)} className={`md:hidden ${colors.muted} hover:text-white`}><ArrowLeft className="h-5 w-5" /></button>
-              <div className="relative shrink-0">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-sm"
-                  style={{ background: activeRoom.avatarColor || getAvatarColor(activeRoom.id) }}>
-                  {activeRoom.type === 'group' ? <Hash className="h-4 w-4" /> : getInitials(activeRoom.name || 'U')}
+            <div className={`px-4 py-3 ${c.headerBg} border-b ${c.border} flex items-center justify-between`}>
+              <div className="flex items-center gap-3">
+                <button onClick={() => { setShowMobileChat(false); setActiveRoomId(null) }} className={`md:hidden p-1.5 rounded-lg ${c.hover} ${c.muted}`}>
+                  <ArrowLeft className="h-5 w-5" />
+                </button>
+                <div className="relative">
+                  <Avatar avatar={activeRoom.avatar} name={activeRoom.name || 'Chat'} avatarColor={activeRoom.avatarColor || getAvatarColor(activeRoom.id)} size={40} />
+                  <OnlineDot online={otherIsOnline} size="md" />
                 </div>
-                {activeRoom.type === 'direct' && <OnlineDot online={!!onlineUsers[activeRoom.participants.find(p => p !== currentUser?.uid) || '']} size="md" />}
+                <div className="min-w-0">
+                  <h3 className={`font-semibold text-sm ${c.text}`}>{activeRoom.name || 'Chat'}</h3>
+                  {activeRoom.type === 'direct' && (
+                    <p className={`text-[11px] ${otherIsOnline ? 'text-emerald-400' : c.muted}`}>
+                      {activeTyping.length > 0 ? (
+                        <>{activeTyping.join(', ')} typing<TypingDots /></>
+                      ) : otherIsOnline ? 'Online' : otherUidInActiveRoom ? 'Offline' : ''}
+                    </p>
+                  )}
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <h3 className={`font-semibold text-[15px] ${colors.text}`}>{activeRoom.name || 'Chat'}</h3>
-                <p className={`text-[12px] ${colors.muted}`}>
-                  {activeRoom.type === 'group' ? `${activeRoom.participants.length} members` :
-                    onlineUsers[activeRoom.participants.find(p => p !== currentUser?.uid) || ''] ? (
-                      <span className="text-emerald-400">online</span>
-                    ) : (
-                      <span>offline</span>
-                    )
-                  }
-                  {activeTyping.length > 0 && <span className="text-emerald-400 ml-2">typing<TypingDots /></span>}
-                </p>
-              </div>
-              <div className="flex items-center gap-0.5 relative">
-                <Button variant="ghost" size="icon" className={`h-9 w-9 ${colors.muted} hover:text-white rounded-full`} onClick={() => setChatSearchOpen(!chatSearchOpen)}><Search className="h-4 w-4" /></Button>
-                <Button variant="ghost" size="icon" className={`h-9 w-9 ${colors.muted} rounded-full`}><Phone className="h-4 w-4" /></Button>
-                <Button variant="ghost" size="icon" className={`h-9 w-9 ${colors.muted} rounded-full`}><Video className="h-4 w-4" /></Button>
-                <Button variant="ghost" size="icon" className={`h-9 w-9 ${colors.muted} rounded-full`} onClick={() => setChatActionMenu(!chatActionMenu)}><MoreVertical className="h-4 w-4" /></Button>
-                {chatActionMenu && (
-                  <div className={`absolute right-0 top-full mt-1 z-50 ${colors.card} border ${colors.border} rounded-xl shadow-2xl py-1 min-w-[200px] animate-in fade-in-0 zoom-in-95 duration-150`}>
-                    <button onClick={() => { setChatSearchOpen(true); setChatActionMenu(false) }} className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs ${colors.hover} ${colors.text}`}><Search className="h-4 w-4 text-[#8696a0]" />Search in Chat</button>
-                    <button onClick={() => { setClearDeleteConfirm({ roomId: activeRoomId!, action: 'clear' }); setChatActionMenu(false) }} className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs ${colors.hover} ${colors.text}`}><Trash2 className="h-4 w-4 text-amber-400" />Clear Chat</button>
-                    <div className={`my-1 border-t ${colors.border}`} />
-                    <button onClick={() => { setClearDeleteConfirm({ roomId: activeRoomId!, action: 'delete' }); setChatActionMenu(false) }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-red-500/10 text-red-400"><Ban className="h-4 w-4" />Delete Chat</button>
-                  </div>
-                )}
+              <div className="flex items-center gap-0.5">
+                <button onClick={() => setChatSearchQuery(chatSearchQuery ? '' : ' ')} className={`p-2 rounded-xl ${c.hover} ${c.muted} transition-colors`}><Search className="h-4 w-4" /></button>
+                <button onClick={() => setChatActionMenu(!chatActionMenu)} className={`p-2 rounded-xl ${c.hover} ${c.muted} transition-colors`}><MoreVertical className="h-4 w-4" /></button>
               </div>
             </div>
 
-            {/* Chat Search Bar */}
-            {chatSearchOpen && (
-              <div className={`px-4 py-2 border-b ${colors.border} ${colors.card} flex items-center gap-2`}>
-                <Search className="h-4 w-4 text-[#8696a0]" />
-                <Input placeholder="Search messages..." value={chatSearchQuery} onChange={(e) => setChatSearchQuery(e.target.value)} className={`flex-1 h-8 text-sm rounded-lg ${colors.input} ${colors.text} border-0`} autoFocus />
-                <button onClick={() => { setChatSearchOpen(false); setChatSearchQuery('') }}><X className="h-4 w-4 text-[#8696a0]" /></button>
-                {chatSearchQuery && <span className={`text-[10px] ${colors.muted}`}>{searchFilteredMsgs.length} found</span>}
+            {/* Chat Action Menu */}
+            {chatActionMenu && (
+              <div className={`absolute top-14 right-4 z-50 ${isDark ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'} border rounded-xl shadow-xl py-1 min-w-[180px]`}>
+                <button onClick={() => { setClearDeleteConfirm({ roomId: activeRoom.id, action: 'clear' }); setChatActionMenu(false) }}
+                  className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} ${c.text} transition-colors`}>Clear Chat</button>
+                <button onClick={() => { setClearDeleteConfirm({ roomId: activeRoom.id, action: 'delete' }); setChatActionMenu(false) }}
+                  className="w-full text-left px-4 py-2.5 text-sm hover:bg-red-500/10 text-red-400 transition-colors">Delete Chat</button>
+              </div>
+            )}
+
+            {/* Search bar */}
+            {chatSearchQuery !== '' && (
+              <div className="px-4 py-2 border-b border-white/5">
+                <Input placeholder="Search in chat..." value={chatSearchQuery === ' ' ? '' : chatSearchQuery} onChange={(e) => setChatSearchQuery(e.target.value)}
+                  className={`h-8 text-sm rounded-lg ${c.input} ${c.text} placeholder:text-slate-500 border`} autoFocus />
               </div>
             )}
 
             {/* Messages */}
-            <div ref={messageContainerRef} className={`flex-1 overflow-y-auto px-4 py-3 ${isDark ? 'chat-wallpaper-dark' : 'chat-wallpaper-light'}`}
-              onClick={() => { setContextMenuMessage(null); setShowEmojiPicker(false); setChatActionMenu(false) }}>
-              {activeMessages.filter(m => !m.deletedFor.includes(currentUser?.uid || '')).map((msg) => {
-                const isOwn = msg.senderId === currentUser?.uid
-                const isSystem = msg.type === 'system'
+            <div className={`flex-1 overflow-y-auto px-4 py-3 ${isDark ? 'chat-wallpaper-dark' : 'chat-wallpaper-light'}`}>
+              {activeMessages
+                .filter(m => !m.deletedFor.includes(currentUser?.uid || '') && !(m.deletedForEveryone && m.type === 'deleted' && m.senderId !== currentUser?.uid))
+                .filter(m => chatSearchQuery && chatSearchQuery !== ' ' ? m.content.toLowerCase().includes(chatSearchQuery.toLowerCase()) : true)
+                .map((msg, idx, arr) => {
+                const isMine = msg.senderId === currentUser?.uid
                 const isDeleted = msg.deletedForEveryone || msg.type === 'deleted'
+                const isSystem = msg.type === 'system'
+                const showAvatar = !isMine && !isSystem && (idx === 0 || arr[idx - 1]?.senderId !== msg.senderId)
+
                 if (isSystem) return (
-                  <div key={msg.id} className="flex justify-center my-2">
-                    <div className={`px-3 py-1 rounded-lg text-[11px] ${isDark ? 'bg-[#1f2c34] text-[#8696a0]' : 'bg-[#ffefa6] text-[#54656f]'}`}>{msg.content}</div>
+                  <div key={msg.id} className="flex justify-center my-3">
+                    <span className={`text-[11px] ${c.muted} bg-white/5 backdrop-blur-sm rounded-lg px-3 py-1`}>{msg.content}</span>
                   </div>
                 )
+
                 return (
-                  <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-0.5 group`}
+                  <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-1 ${showAvatar ? 'mt-3' : ''}`}
                     onContextMenu={(e) => { e.preventDefault(); setContextMenuMessage(msg) }}
-                    onTouchStart={() => handleTouchStart(msg)} onTouchEnd={handleTouchEnd} onTouchMove={handleTouchEnd}>
-                    <div className="max-w-[65%] relative">
-                      {/* Reply Preview */}
-                      {msg.replyTo && msg.replyToContent && (
-                        <div className={`rounded-t-lg px-3 py-1.5 mb-0.5 text-[11px] border-l-2 ${isOwn ? `${isDark ? 'bg-emerald-900/30 border-emerald-400' : 'bg-emerald-50 border-emerald-400'}` : `${isDark ? 'bg-[#2a3942] border-[#8696a0]' : 'bg-gray-100 border-gray-300'}`} ${colors.muted}`}>
-                          <span className="font-medium text-emerald-400">{msg.replyToSender}</span><br />{msg.replyToContent?.slice(0, 80)}{msg.replyToContent && msg.replyToContent.length > 80 ? '...' : ''}
+                    onTouchStart={() => handleTouchStart(msg)} onTouchEnd={handleTouchEnd}>
+                    <div className={`flex items-end gap-2 max-w-[75%] ${isMine ? 'flex-row-reverse' : ''}`}>
+                      {!isMine && (
+                        <div className="w-7 shrink-0">
+                          {showAvatar && <Avatar avatar={msg.senderAvatar} name={msg.senderName} avatarColor={msg.senderAvatarColor} size={28} />}
                         </div>
                       )}
-                      {/* Message Bubble */}
-                      <div className={`px-2.5 py-1.5 ${isOwn ? isDark ? 'bg-[#005c4b]' : 'bg-[#d9fdd3]' : isDark ? 'bg-[#1f2c34]' : 'bg-white'} ${msg.replyTo ? 'rounded-b-lg' : 'rounded-lg'} ${isOwn ? isDark ? 'rounded-tr-sm' : 'rounded-tr-sm' : isDark ? 'rounded-tl-sm' : 'rounded-tl-sm'} shadow-sm`}>
-                        {!isOwn && activeRoom.type === 'group' && !isDeleted && <p className="text-[11px] font-semibold mb-0.5" style={{ color: msg.senderAvatarColor || getAvatarColor(msg.senderId) }}>{msg.senderName}</p>}
-                        {isDeleted ? (
-                          <div className="flex items-center gap-2">
-                            <Ban className={`h-3.5 w-3.5 ${isOwn ? (isDark ? 'text-white/30' : 'text-gray-400') : (isDark ? 'text-white/30' : 'text-gray-400')} shrink-0`} />
-                            <p className={`${fontSizeClass} italic ${isOwn ? (isDark ? 'text-white/40' : 'text-gray-400') : (isDark ? 'text-white/40' : 'text-gray-400')}`}>This message was deleted</p>
+                      <div className={`group relative`}>
+                        {msg.replyTo && (
+                          <div className={`text-[10px] ${c.muted} px-3 pt-2 pb-1 ${isDark ? 'bg-white/5' : 'bg-black/5'} rounded-t-2xl border-b ${c.border}`}>
+                            <span className="font-medium">{msg.replyToSender}</span>: {msg.replyToContent}
                           </div>
-                        ) : (
-                          <p className={`${fontSizeClass} whitespace-pre-wrap break-words ${isOwn ? (isDark ? 'text-[#e9edef]' : 'text-[#111b21]') : (isDark ? 'text-[#e9edef]' : 'text-[#111b21]')}`}>{msg.content}</p>
                         )}
-                        <div className="flex items-center justify-end gap-1 -mt-0.5">
-                          <span className={`text-[10px] ${isOwn ? (isDark ? 'text-white/50' : 'text-[#667781]') : colors.muted}`}>{formatTime(msg.createdAt)}</span>
-                          {isOwn && !isDeleted && <TickIndicator status={msg.status} color={msg.status === 'read' ? '#53bdeb' : (isDark ? '#8696a0' : '#667781')} />}
+                        <div className={`px-3 py-2 rounded-2xl ${isMine
+                          ? `bg-gradient-to-br from-[rgba(${tp.primaryRgb},0.2)] to-[rgba(${tp.primaryRgb},0.1)] border border-[rgba(${tp.primaryRgb},0.2)]`
+                          : `${isDark ? 'bg-white/5 border border-white/8' : 'bg-white border border-slate-200'}`
+                        } ${isDeleted ? 'italic' : ''}`}>
+                          {!isMine && showAvatar && activeRoom?.type === 'group' && (
+                            <p className={`text-[10px] font-medium mb-0.5`} style={{ color: msg.senderAvatarColor || getAvatarColor(msg.senderId) }}>{msg.senderName}</p>
+                          )}
+                          {isDeleted ? (
+                            <p className={`text-[13px] ${c.muted}`}>&#x1F6AB; This message was deleted</p>
+                          ) : (
+                            <p className={`text-[13px] ${c.text} break-words whitespace-pre-wrap`}>{msg.content}</p>
+                          )}
+                          <div className={`flex items-center justify-end gap-1 mt-0.5`}>
+                            <span className={`text-[10px] ${c.muted}`}>{formatTime(msg.createdAt)}</span>
+                            {isMine && <TickIndicator status={msg.status} color={msg.status === 'read' ? '#53bdeb' : (isDark ? '#8696a0' : '#8696a0')} />}
+                          </div>
                         </div>
                       </div>
-                      {/* Context Menu */}
-                      {contextMenuMessage?.id === msg.id && (
-                        <div className={`absolute ${isOwn ? 'left-0 -translate-x-full mr-1' : 'right-0 translate-x-full ml-1'} top-0 z-50 ${colors.card} border ${colors.border} rounded-xl shadow-2xl py-1 min-w-[180px] animate-in fade-in-0 zoom-in-95 duration-150`}>
-                          <button onClick={() => { setReplyingTo(msg); setContextMenuMessage(null) }} className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs ${colors.hover} ${colors.text}`}><Reply className="h-4 w-4 text-[#8696a0]" />Reply</button>
-                          {!isDeleted && <button onClick={() => { navigator.clipboard.writeText(msg.content); setContextMenuMessage(null) }} className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs ${colors.hover} ${colors.text}`}>📋 Copy</button>}
-                          {canDeleteForEveryone(msg) && <button onClick={() => { setDeleteConfirm({ msg, forEveryone: true }); setContextMenuMessage(null) }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-red-500/10 text-red-400"><Trash2 className="h-4 w-4" />Delete for Everyone</button>}
-                          <button onClick={() => { setDeleteConfirm({ msg, forEveryone: false }); setContextMenuMessage(null) }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-red-500/10 text-red-400"><Trash2 className="h-4 w-4" />Delete for Me</button>
-                        </div>
-                      )}
                     </div>
                   </div>
                 )
@@ -797,175 +829,224 @@ export function ChatApp() {
               <div ref={messageEndRef} />
             </div>
 
-            {/* Typing indicator */}
-            {activeTyping.length > 0 && (
-              <div className={`px-4 py-1.5 ${colors.card}`}><p className="text-xs text-emerald-400">{activeTyping.join(', ')} typing<TypingDots /></p></div>
-            )}
-
-            {/* Reply preview */}
+            {/* Reply Preview */}
             {replyingTo && (
-              <div className={`px-4 py-2 ${colors.card} border-t ${colors.border} flex items-center gap-2`}>
-                <div className="flex-1 min-w-0 border-l-2 border-emerald-400 pl-3">
-                  <p className="text-[11px] font-medium text-emerald-400">{replyingTo.senderName}</p>
-                  <p className={`text-[11px] ${colors.muted} truncate`}>{replyingTo.content?.slice(0, 60)}</p>
+              <div className={`px-4 py-2 ${isDark ? 'bg-white/5' : 'bg-slate-50'} border-t ${c.border} flex items-center gap-2`}>
+                <div className={`w-1 h-8 rounded-full bg-gradient-to-b ${tp.gradient}`} />
+                <div className="flex-1 min-w-0">
+                  <p className={`text-[10px] font-medium ${c.muted}`}>{replyingTo.senderName}</p>
+                  <p className={`text-[11px] ${c.sub} truncate`}>{replyingTo.content}</p>
                 </div>
-                <button onClick={() => setReplyingTo(null)} className={`${colors.muted} hover:text-white p-1`}><X className="h-4 w-4" /></button>
+                <button onClick={() => setReplyingTo(null)} className={`${c.muted} hover:text-white`}><X className="h-4 w-4" /></button>
               </div>
             )}
 
-            {/* Emoji Picker */}
-            {showEmojiPicker && <div className="relative"><EmojiPicker onSelect={(emoji) => setMessageInput(prev => prev + emoji)} onClose={() => setShowEmojiPicker(false)} isDark={isDark} /></div>}
-
             {/* Message Input */}
-            <div className={`px-3 py-2.5 ${colors.headerBg} border-t ${colors.border}`}>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className={`p-2 rounded-full ${colors.muted} hover:text-emerald-400 transition-colors shrink-0`}><Smile className="h-5 w-5" /></button>
-                <button className={`p-2 rounded-full ${colors.muted} hover:text-emerald-400 transition-colors shrink-0`}><Paperclip className="h-5 w-5" /></button>
-                <div className="flex-1">
-                  <Input placeholder="Type a message" value={messageInput} onChange={(e) => handleTyping(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
-                    className={`h-10 rounded-xl text-sm ${isDark ? 'bg-[#2a3942] border-0 text-[#e9edef] placeholder:text-[#8696a0]' : 'bg-[#f0f2f5] border-0 text-[#111b21] placeholder:text-[#667781]'} focus-visible:ring-1 focus-visible:ring-emerald-500/30`} />
-                </div>
-                <Button onClick={handleSend} disabled={!messageInput.trim() || sendingMessage}
-                  className={`h-10 w-10 rounded-full bg-gradient-to-r ${tp.gradient} text-white shrink-0 shadow-lg ${tp.glow} p-0`} size="icon">
-                  <Send className="h-4 w-4" />
-                </Button>
+            <div className={`px-4 py-3 ${c.border} border-t`}>
+              <div className={`flex items-end gap-2 ${isDark ? 'bg-white/5' : 'bg-slate-100'} rounded-2xl px-3 py-2`}>
+                <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className={`p-1.5 rounded-lg ${c.hover} ${c.muted} transition-colors shrink-0`}>
+                  <Smile className="h-5 w-5" />
+                </button>
+                {showEmojiPicker && <EmojiPicker onSelect={(e) => setMessageInput(prev => prev + e)} onClose={() => setShowEmojiPicker(false)} isDark={isDark} />}
+                <textarea
+                  value={messageInput}
+                  onChange={(e) => handleTyping(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+                  placeholder="Type a message..."
+                  rows={1}
+                  className={`flex-1 bg-transparent ${c.text} placeholder:text-slate-500 outline-none resize-none text-sm max-h-24`}
+                  style={{ lineHeight: '1.4' }}
+                />
+                <button onClick={handleSend} disabled={!messageInput.trim() || sendingMessage}
+                  className={`p-2 rounded-xl bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow} disabled:opacity-30 transition-all shrink-0`}>
+                  {sendingMessage ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-4 w-4" />}
+                </button>
               </div>
             </div>
           </>
-        ) : (
-          /* Empty State */
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center max-w-sm">
-              <div className={`w-28 h-28 rounded-full bg-gradient-to-br ${tp.gradient} flex items-center justify-center mx-auto mb-6 shadow-2xl ${tp.glow}`}>
-                <Sparkles className="h-14 w-14 text-white" />
-              </div>
-              <h2 className={`text-3xl font-light mb-2 ${colors.text}`}>FurtherChat</h2>
-              <p className={`text-sm ${colors.muted} mb-6 leading-relaxed`}>Send and receive messages in real-time. Find users, send a chat request, and start chatting when they accept.</p>
-              <Button onClick={() => setSidebarTab('users')} className={`bg-gradient-to-r ${tp.gradient} text-white shadow-lg ${tp.glow} rounded-full px-8 h-11`}>
-                <UserPlus className="h-4 w-4 mr-2" />Find Users
-              </Button>
-            </div>
-          </div>
         )}
       </div>
 
-      {/* ====== DIALOGS ====== */}
-
-      {/* Group Dialog */}
-      <Dialog open={showNewGroup} onOpenChange={setShowNewGroup}>
-        <DialogContent className={isDark ? 'bg-[#1f2c34] border-[#2a3942]' : 'bg-white border-[#e9edef]'}>
-          <DialogHeader><DialogTitle className={colors.text}>Create Group Chat</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <Input placeholder="Group name..." value={groupName} onChange={(e) => setGroupName(e.target.value)} className={`rounded-xl ${isDark ? 'bg-[#2a3942] border-0 text-[#e9edef]' : 'bg-[#f0f2f5] border-0 text-[#111b21]'}`} />
-            <div className="max-h-48 overflow-y-auto space-y-1">
-              {allUsers.filter(u => hasExistingChat(u.uid)).map(u => {
-                const sel = selectedUsers.includes(u.uid)
-                return (
-                  <button key={u.uid} onClick={() => setSelectedUsers(p => sel ? p.filter(i => i !== u.uid) : [...p, u.uid])}
-                    className={`w-full flex items-center gap-3 p-2.5 rounded-xl transition-all ${sel ? (isDark ? 'bg-emerald-600/10 border border-emerald-600/30' : 'bg-emerald-50 border border-emerald-200') : colors.hover}`}>
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-[10px]" style={{ background: u.avatarColor }}>{getInitials(u.displayName)}</div>
-                    <span className={`text-sm ${colors.text}`}>{u.displayName}</span>
-                    {sel && <Check className="h-3.5 w-3.5 text-emerald-400 ml-auto" />}
-                  </button>
-                )
-              })}
-            </div>
-            <Button onClick={() => { createGroupChatRoom(groupName, currentUser!.uid, selectedUsers).then(r => { setActiveRoomId(r); setShowMobileChat(true); setShowNewGroup(false); setGroupName(''); setSelectedUsers([]); setSidebarTab('chats') }) }}
-              disabled={!groupName.trim() || selectedUsers.length === 0} className={`w-full bg-gradient-to-r ${tp.gradient} text-white rounded-xl`}>
-              <Users className="h-4 w-4 mr-2" />Create Group
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Message Confirmation */}
-      <Dialog open={!!deleteConfirm} onOpenChange={(open) => { if (!open) { setDeleteConfirm(null); setDeleteError('') } }}>
-        <DialogContent className={`${isDark ? 'bg-[#1f2c34] border-[#2a3942]' : 'bg-white border-[#e9edef]'} max-w-sm`}>
-          <DialogHeader>
-            <DialogTitle className={`flex items-center gap-2 ${colors.text}`}>
-              <AlertTriangle className="h-5 w-5 text-red-400" />
-              {deleteConfirm?.forEveryone ? 'Delete for Everyone?' : 'Delete for Me?'}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <p className={`text-sm ${colors.muted}`}>
-              {deleteConfirm?.forEveryone ? 'This message will be permanently deleted for everyone. Others will see "This message was deleted" instead.' : 'This message will only be deleted from your view. The other person will still see it.'}
-            </p>
-            {deleteConfirm && (
-              <div className={`rounded-xl p-3 ${isDark ? 'bg-[#2a3942]' : 'bg-[#f0f2f5]'}`}>
-                <p className={`text-[11px] ${colors.muted} mb-1`}>{deleteConfirm.msg.senderName}</p>
-                <p className={`text-sm ${colors.text} line-clamp-2`}>{deleteConfirm.msg.content}</p>
-              </div>
+      {/* ====== CONTEXT MENU ====== */}
+      {contextMenuMessage && (
+        <div className="fixed inset-0 z-50" onClick={() => setContextMenuMessage(null)}>
+          <div className={`absolute ${isDark ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'} border rounded-xl shadow-2xl py-1 min-w-[180px]`}
+            style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
+            onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => { setReplyingTo(contextMenuMessage); setContextMenuMessage(null) }}
+              className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} ${c.text} transition-colors flex items-center gap-2`}>
+              <ChevronRight className="h-3.5 w-3.5" />Reply
+            </button>
+            <button onClick={() => { setDeleteConfirm({ msg: contextMenuMessage, forEveryone: false }); setContextMenuMessage(null) }}
+              className="w-full text-left px-4 py-2.5 text-sm hover:bg-red-500/10 text-red-400 transition-colors flex items-center gap-2">
+              <Trash2 className="h-3.5 w-3.5" />Delete for Me
+            </button>
+            {canDeleteForEveryone(contextMenuMessage) && (
+              <button onClick={() => { setDeleteConfirm({ msg: contextMenuMessage, forEveryone: true }); setContextMenuMessage(null) }}
+                className="w-full text-left px-4 py-2.5 text-sm hover:bg-red-500/10 text-red-400 transition-colors flex items-center gap-2">
+                <Trash2 className="h-3.5 w-3.5" />Delete for Everyone
+              </button>
             )}
-            {deleteError && <p className="text-xs text-red-400 bg-red-500/10 px-3 py-2 rounded-xl">{deleteError}</p>}
-            <div className="flex gap-2">
-              <Button variant="outline" className={`flex-1 rounded-xl ${isDark ? 'border-[#2a3942] text-[#e9edef]' : ''}`} onClick={() => { setDeleteConfirm(null); setDeleteError('') }} disabled={deletingMsg}>Cancel</Button>
-              <Button variant="destructive" className="flex-1 rounded-xl" onClick={() => deleteConfirm && handleDeleteMsg(deleteConfirm.msg, deleteConfirm.forEveryone)} disabled={deletingMsg}>
-                {deletingMsg ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <>{deleteConfirm?.forEveryone ? 'Delete for Everyone' : 'Delete for Me'}</>}
-              </Button>
-            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
 
-      {/* Clear/Delete Chat Confirmation */}
-      <Dialog open={!!clearDeleteConfirm} onOpenChange={(open) => { if (!open) setClearDeleteConfirm(null) }}>
-        <DialogContent className={`${isDark ? 'bg-[#1f2c34] border-[#2a3942]' : 'bg-white border-[#e9edef]'} max-w-sm`}>
-          <DialogHeader>
-            <DialogTitle className={`flex items-center gap-2 ${colors.text}`}>
-              <AlertTriangle className="h-5 w-5 text-red-400" />
-              {clearDeleteConfirm?.action === 'delete' ? 'Delete Chat?' : 'Clear Chat?'}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <p className={`text-sm ${colors.muted}`}>
-              {clearDeleteConfirm?.action === 'delete'
-                ? 'This chat will be deleted from your list. You can send a new chat request to this user later if you want to chat again.'
-                : 'All messages will be deleted from your view. The other person will still have the messages.'}
+      {/* ====== DELETE CONFIRM DIALOG ====== */}
+      {deleteConfirm && (
+        <Dialog open={true} onOpenChange={() => setDeleteConfirm(null)}>
+          <DialogContent className={`${isDark ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+            <DialogHeader>
+              <DialogTitle className={c.text}>{deleteConfirm.forEveryone ? 'Delete for Everyone?' : 'Delete for Me?'}</DialogTitle>
+            </DialogHeader>
+            <p className={`text-sm ${c.muted}`}>
+              {deleteConfirm.forEveryone
+                ? 'This message will be deleted for everyone in this chat. This action cannot be undone.'
+                : 'This message will only be deleted for you. Other participants can still see it.'}
             </p>
-            <div className="flex gap-2">
-              <Button variant="outline" className={`flex-1 rounded-xl ${isDark ? 'border-[#2a3942] text-[#e9edef]' : ''}`} onClick={() => setClearDeleteConfirm(null)} disabled={clearingChat}>Cancel</Button>
-              <Button variant="destructive" className="flex-1 rounded-xl" onClick={() => clearDeleteConfirm && handleClearChat(clearDeleteConfirm.roomId, clearDeleteConfirm.action)} disabled={clearingChat}>
-                {clearingChat ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <>{clearDeleteConfirm?.action === 'delete' ? 'Delete Chat' : 'Clear Chat'}</>}
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="ghost" onClick={() => setDeleteConfirm(null)} className={c.muted}>Cancel</Button>
+              <Button onClick={() => handleDeleteMsg(deleteConfirm.msg, deleteConfirm.forEveryone)} disabled={deletingMsg}
+                className="bg-red-500 hover:bg-red-600 text-white">
+                {deletingMsg ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Delete'}
               </Button>
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
 
-      {/* Password Change */}
-      <Dialog open={showPasswordChange} onOpenChange={(open) => { if (!open) { setShowPasswordChange(false); setPasswordError(''); setPasswordSuccess(false); setCurrentPassword(''); setNewPassword(''); setConfirmPassword('') } }}>
-        <DialogContent className={`${isDark ? 'bg-[#1f2c34] border-[#2a3942]' : 'bg-white border-[#e9edef]'} max-w-sm`}>
-          <DialogHeader>
-            <DialogTitle className={`flex items-center gap-2 ${colors.text}`}>
-              <Lock className="h-5 w-5 text-emerald-400" />Change Password
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            {passwordError && <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2"><p className="text-xs text-red-400">{passwordError}</p></div>}
-            {passwordSuccess && <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-3 py-2"><p className="text-xs text-emerald-400">Password changed successfully!</p></div>}
-            <div className="space-y-1.5">
-              <label className={`text-[11px] font-medium ${colors.muted}`}>Current Password</label>
-              <Input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className={`rounded-xl ${isDark ? 'bg-[#2a3942] border-0 text-[#e9edef]' : 'bg-[#f0f2f5] border-0 text-[#111b21]'}`} placeholder="Enter current password" />
+      {/* ====== CLEAR/DELETE CHAT CONFIRM ====== */}
+      {clearDeleteConfirm && (
+        <Dialog open={true} onOpenChange={() => setClearDeleteConfirm(null)}>
+          <DialogContent className={`${isDark ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+            <DialogHeader>
+              <DialogTitle className={c.text}>{clearDeleteConfirm.action === 'delete' ? 'Delete Chat?' : 'Clear Chat?'}</DialogTitle>
+            </DialogHeader>
+            <p className={`text-sm ${c.muted}`}>
+              {clearDeleteConfirm.action === 'delete'
+                ? 'This chat will be removed from your list. You can send a new chat request later if you want to reconnect.'
+                : 'All messages will be cleared for you only. The chat will remain in your list.'}
+            </p>
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="ghost" onClick={() => setClearDeleteConfirm(null)} className={c.muted}>Cancel</Button>
+              <Button onClick={() => handleClearChat(clearDeleteConfirm.roomId, clearDeleteConfirm.action)} disabled={clearingChat}
+                className="bg-red-500 hover:bg-red-600 text-white">
+                {clearingChat ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : clearDeleteConfirm.action === 'delete' ? 'Delete' : 'Clear'}
+              </Button>
             </div>
-            <div className="space-y-1.5">
-              <label className={`text-[11px] font-medium ${colors.muted}`}>New Password</label>
-              <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className={`rounded-xl ${isDark ? 'bg-[#2a3942] border-0 text-[#e9edef]' : 'bg-[#f0f2f5] border-0 text-[#111b21]'}`} placeholder="Min 6 characters" />
-            </div>
-            <div className="space-y-1.5">
-              <label className={`text-[11px] font-medium ${colors.muted}`}>Confirm New Password</label>
-              <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={`rounded-xl ${isDark ? 'bg-[#2a3942] border-0 text-[#e9edef]' : 'bg-[#f0f2f5] border-0 text-[#111b21]'}`} placeholder="Confirm new password" onKeyDown={(e) => e.key === 'Enter' && handleChangePassword()} />
-            </div>
-            <div className="flex gap-2 pt-1">
-              <Button variant="outline" className={`flex-1 rounded-xl ${isDark ? 'border-[#2a3942] text-[#e9edef]' : ''}`} onClick={() => { setShowPasswordChange(false); setPasswordError(''); setCurrentPassword(''); setNewPassword(''); setConfirmPassword('') }} disabled={changingPassword}>Cancel</Button>
-              <Button className={`flex-1 bg-gradient-to-r ${tp.gradient} text-white rounded-xl`} onClick={handleChangePassword} disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword}>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* ====== PASSWORD CHANGE DIALOG ====== */}
+      {showPasswordChange && (
+        <Dialog open={true} onOpenChange={setShowPasswordChange}>
+          <DialogContent className={`${isDark ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+            <DialogHeader>
+              <DialogTitle className={c.text}>Change Password</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              {passwordError && <div className="text-xs text-red-400 bg-red-500/10 rounded-xl px-3 py-2">{passwordError}</div>}
+              {passwordSuccess && <div className="text-xs text-emerald-400 bg-emerald-500/10 rounded-xl px-3 py-2">Password changed successfully!</div>}
+              <Input type="password" placeholder="Current password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)}
+                className={`h-10 ${c.input} ${c.text} border rounded-xl placeholder:text-slate-500`} />
+              <Input type="password" placeholder="New password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+                className={`h-10 ${c.input} ${c.text} border rounded-xl placeholder:text-slate-500`} />
+              <Input type="password" placeholder="Confirm new password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                className={`h-10 ${c.input} ${c.text} border rounded-xl placeholder:text-slate-500`} />
+              <Button onClick={handleChangePassword} disabled={changingPassword} className={`w-full bg-gradient-to-r ${tp.gradient} text-white h-10 rounded-xl`}>
                 {changingPassword ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Change Password'}
               </Button>
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* ====== AVATAR PICKER DIALOG ====== */}
+      {showAvatarPicker && (
+        <Dialog open={true} onOpenChange={setShowAvatarPicker}>
+          <DialogContent className={`${isDark ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'} max-w-md`}>
+            <DialogHeader>
+              <DialogTitle className={c.text}>Change Profile Picture</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* Current Avatar */}
+              <div className="flex items-center justify-center py-4">
+                <div className="relative">
+                  <Avatar avatar={currentUser?.avatar || null} name={currentUser?.displayName || ''} avatarColor={currentUser?.avatarColor || ''} size={80} />
+                  <div className={`absolute -bottom-1 -right-1 w-7 h-7 bg-gradient-to-r ${tp.gradient} rounded-full flex items-center justify-center shadow-md`}>
+                    <Camera className="w-3.5 h-3.5 text-white" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Upload Button */}
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+              <Button onClick={() => fileInputRef.current?.click()} variant="outline" className={`w-full h-10 rounded-xl gap-2 ${isDark ? 'border-white/10 hover:bg-white/5 text-white' : 'border-slate-200 hover:bg-slate-50'}`}>
+                <ImagePlus className="h-4 w-4" />Upload from Device
+              </Button>
+
+              {/* Built-in Avatars */}
+              <div>
+                <h3 className={`text-xs font-bold uppercase tracking-wider mb-2 ${c.muted}`}>Choose an Avatar</h3>
+                <div className="grid grid-cols-4 gap-3">
+                  {BUILT_IN_AVATARS.map((av) => (
+                    <button key={av.id} onClick={() => handleSelectBuiltInAvatar(av.id)}
+                      className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all ${currentUser?.avatar === av.id
+                        ? `bg-gradient-to-r ${tp.gradient} shadow-md ${tp.glow} ring-2 ring-emerald-400/50`
+                        : isDark ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-50 hover:bg-slate-100'}`}>
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: av.bg }}>
+                        <span className="text-lg">{av.emoji}</span>
+                      </div>
+                      <span className={`text-[9px] ${currentUser?.avatar === av.id ? 'text-white' : c.muted}`}>{av.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Remove Avatar */}
+              {currentUser?.avatar && (
+                <Button onClick={handleRemoveAvatar} variant="outline" className="w-full h-10 rounded-xl gap-2 text-red-400 border-red-500/30 hover:bg-red-500/10">
+                  <Trash className="h-4 w-4" />Remove Picture
+                </Button>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* ====== GROUP CREATION DIALOG ====== */}
+      {showNewGroup && (
+        <Dialog open={true} onOpenChange={setShowNewGroup}>
+          <DialogContent className={`${isDark ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+            <DialogHeader>
+              <DialogTitle className={c.text}>Create Group Chat</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <Input placeholder="Group name" value={groupName} onChange={(e) => setGroupName(e.target.value)}
+                className={`h-10 ${c.input} ${c.text} border rounded-xl placeholder:text-slate-500`} />
+              <div className="max-h-60 overflow-y-auto space-y-1">
+                {allUsers.map((user) => (
+                  <button key={user.uid} onClick={() => setSelectedUsers(prev => prev.includes(user.uid) ? prev.filter(u => u !== user.uid) : [...prev, user.uid])}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all ${selectedUsers.includes(user.uid) ? (isDark ? 'bg-emerald-500/15' : 'bg-emerald-50') : c.hover}`}>
+                    <Avatar avatar={user.avatar} name={user.displayName} avatarColor={user.avatarColor || getAvatarColor(user.uid)} size={32} />
+                    <span className={`text-sm ${c.text}`}>{user.displayName}</span>
+                    {selectedUsers.includes(user.uid) && <Check className="h-4 w-4 text-emerald-400 ml-auto" />}
+                  </button>
+                ))}
+              </div>
+              <Button onClick={async () => {
+                if (!groupName.trim() || selectedUsers.length === 0 || !currentUser) return
+                const roomId = await createGroupChatRoom(groupName, currentUser.uid, selectedUsers)
+                setActiveRoomId(roomId); setShowMobileChat(true); setShowNewGroup(false)
+                setGroupName(''); setSelectedUsers([])
+              }} disabled={!groupName.trim() || selectedUsers.length === 0}
+                className={`w-full bg-gradient-to-r ${tp.gradient} text-white h-10 rounded-xl`}>
+                Create Group
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }

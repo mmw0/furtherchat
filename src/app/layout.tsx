@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "FurtherChat - Real-time Messaging",
-  description: "A fully functional real-time chat application with Firebase authentication, progressive account lockout, and GitHub Pages deployment support.",
-  keywords: ["chat", "messaging", "real-time", "Firebase", "GitHub Pages", "Next.js"],
+  description: "A fully functional real-time chat application with Firebase authentication, progressive account lockout, and profile picture support.",
+  keywords: ["chat", "messaging", "real-time", "Firebase", "Next.js"],
   icons: {
     icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>",
   },

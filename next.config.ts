@@ -1,12 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
-  // For GitHub Pages static deployment, change output to:
-  // output: "export",
-  // And set basePath to your repo name:
-  // basePath: "/your-repo-name",
-  // images: { unoptimized: true },
+  output: "export",
+  images: { unoptimized: true },
   typescript: {
     ignoreBuildErrors: true,
   },
