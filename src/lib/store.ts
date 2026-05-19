@@ -129,6 +129,8 @@ interface AppState {
   setChatActionMenu: (show: boolean) => void
   clearDeleteConfirm: { roomId: string; action: 'clear' | 'delete' } | null
   setClearDeleteConfirm: (confirm: { roomId: string; action: 'clear' | 'delete' } | null) => void
+  showPasswordChange: boolean
+  setShowPasswordChange: (show: boolean) => void
   showCallDialog: boolean
   setShowCallDialog: (show: boolean) => void
   callType: 'voice' | 'video' | null
@@ -163,7 +165,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       typingUsers: {}, sentRequests: [], receivedRequests: [],
       chatSearchQuery: '', chatSearchResults: [], showEmojiPicker: false,
       replyingTo: null, contextMenuMessage: null, deleteConfirm: null, chatActionMenu: false,
-      clearDeleteConfirm: null, showCallDialog: false, callType: null,
+      clearDeleteConfirm: null, showPasswordChange: false, showCallDialog: false, callType: null,
     })
   },
   setView: (view) => set({ view }),
@@ -240,6 +242,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setChatActionMenu: (show) => set({ chatActionMenu: show }),
   clearDeleteConfirm: null,
   setClearDeleteConfirm: (confirm) => set({ clearDeleteConfirm: confirm }),
+  showPasswordChange: false,
+  setShowPasswordChange: (show) => set({ showPasswordChange: show }),
   showCallDialog: false,
   setShowCallDialog: (show) => set({ showCallDialog: show }),
   callType: null,

@@ -7,7 +7,7 @@ import {
   setupPresence, listenToPresence, listenToChatRooms,
   createGroupChatRoom, getAllUsers, searchUsers,
   sendMessage, listenToMessages, setTyping, listenToTyping,
-  logoutUser, updateProfileData, changeUsername,
+  logoutUser, updateProfileData, changeUsername, changeUserPassword,
   sendChatRequest, listenToSentRequests, listenToReceivedRequests,
   acceptChatRequest, rejectChatRequest, cancelChatRequest,
   deleteMessageForMe, deleteMessageForEveryone,
@@ -26,7 +26,7 @@ import {
   Circle, Phone, Video, Hash, Edit3, Check, X, UserPlus, UserCheck,
   UserX, Clock, Bell, BellRing, Smile, Reply, Trash2, CheckCheck,
   CheckCircle, Palette, Type, MessageSquare, Sun, Moon, Image as ImageIcon,
-  RotateCcw, AtSign, ChevronDown, Sparkles, MoreVertical, Ban, AlertTriangle,
+  RotateCcw, AtSign, ChevronDown, Sparkles, MoreVertical, Ban, AlertTriangle, Lock,
 } from 'lucide-react'
 
 // ============================================================
@@ -64,7 +64,7 @@ export function ChatApp() {
     showEmojiPicker, setShowEmojiPicker, replyingTo, setReplyingTo,
     contextMenuMessage, setContextMenuMessage, chatSearchQuery, setChatSearchQuery,
     deleteConfirm, setDeleteConfirm, chatActionMenu, setChatActionMenu,
-    clearDeleteConfirm, setClearDeleteConfirm,
+    clearDeleteConfirm, setClearDeleteConfirm, showPasswordChange, setShowPasswordChange,
     logout } = store
 
   const [messageInput, setMessageInput] = useState('')
@@ -87,6 +87,12 @@ export function ChatApp() {
   const [deletingMsg, setDeletingMsg] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const [clearingChat, setClearingChat] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+  const [passwordSuccess, setPasswordSuccess] = useState(false)
+  const [changingPassword, setChangingPassword] = useState(false)
   const messageEndRef = useRef<HTMLDivElement>(null)
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const listenersRef = useRef<(() => void)[]>([])
@@ -137,7 +143,17 @@ export function ChatApp() {
 
   const handleSendRequest = useCallback(async (toUser: any) => {
     if (!currentUser) return; setSendingRequest(toUser.uid); setRequestError('')
-    try { await sendChatRequest(currentUser.uid, currentUser.username, currentUser.displayName, currentUser.avatar, currentUser.avatarColor, toUser.uid, toUser.username, toUser.displayName, toUser.avatar, toUser.avatarColor) } catch (err: any) { setRequestError(err.message) } finally { setSendingRequest(null) }
+    try {
+      await sendChatRequest(currentUser.uid, currentUser.username, currentUser.displayName, currentUser.avatar, currentUser.avatarColor, toUser.uid, toUser.username, toUser.displayName, toUser.avatar, toUser.avatarColor)
+    } catch (err: any) {
+      if (err.message === 'Chat restored! Check your chats.') {
+        setRequestError('')
+        // Refresh chat rooms to show the restored chat
+        setSidebarTab('chats')
+      } else {
+        setRequestError(err.message)
+      }
+    } finally { setSendingRequest(null) }
   }, [currentUser])
 
   const handleAccept = useCallback(async (reqId: string, fromUid: string) => {
@@ -219,6 +235,23 @@ export function ChatApp() {
     if (!currentUser || !newUsername.trim()) return; setUsernameError('')
     try { await changeUsername(currentUser.uid, newUsername.trim()); useAppStore.getState().setAuth({ ...currentUser, username: newUsername.trim(), usernameChangedAt: Date.now() }); setEditingUsername(false) } catch (err: any) { setUsernameError(err.message) }
   }, [currentUser, newUsername])
+
+  const handleChangePassword = useCallback(async () => {
+    setPasswordError(''); setPasswordSuccess(false)
+    if (!currentPassword || !newPassword || !confirmPassword) { setPasswordError('All fields are required'); return }
+    if (newPassword.length < 6) { setPasswordError('New password must be at least 6 characters'); return }
+    if (newPassword !== confirmPassword) { setPasswordError('New passwords do not match'); return }
+    setChangingPassword(true)
+    try {
+      await changeUserPassword(currentPassword, newPassword)
+      setPasswordSuccess(true); setCurrentPassword(''); setNewPassword(''); setConfirmPassword('')
+      setTimeout(() => { setShowPasswordChange(false); setPasswordSuccess(false) }, 2000)
+    } catch (err: any) {
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') setPasswordError('Current password is incorrect')
+      else if (err.code === 'auth/requires-recent-login') setPasswordError('Please log out and log back in, then try again')
+      else setPasswordError(err.message || 'Failed to change password')
+    } finally { setChangingPassword(false) }
+  }, [currentPassword, newPassword, confirmPassword])
 
   const activeRoom = chatRooms.find(r => r.id === activeRoomId)
   const activeMessages = activeRoomId ? (messages[activeRoomId] || []) : []
@@ -384,6 +417,7 @@ export function ChatApp() {
                 {usernameError && <p className="text-[10px] text-red-400">{usernameError}</p>}
                 {currentUser?.usernameChangedAt && <p className={`text-[10px] ${textMuted}`}>Can change again in {Math.max(0, Math.ceil(30 - (Date.now() - currentUser.usernameChangedAt) / 86400000))} days</p>}
                 <div className="flex items-center justify-between"><span className={`text-[11px] ${textMuted}`}>Display Name</span><span className={`text-xs font-medium ${isDark ? 'text-white' : 'text-slate-900'}`}>{currentUser?.displayName}</span></div>
+                <div className="flex items-center justify-between"><span className={`text-[11px] ${textMuted}`}>Password</span><button onClick={() => setShowPasswordChange(true)} className={`text-xs font-medium text-emerald-400 hover:text-emerald-300`}>Change</button></div>
               </div>
             </div>
             {/* Security */}
@@ -567,7 +601,7 @@ export function ChatApp() {
           <div className="space-y-3">
             {clearDeleteConfirm?.action === 'delete' ? (
               <p className={`text-sm ${textSub}`}>
-                This chat will be deleted from your chat list. The other person will still have the conversation. This action cannot be undone.
+                This chat will be deleted from your chat list. You can send a new chat request to this user later if you want to chat again. This action cannot be undone.
               </p>
             ) : (
               <p className={`text-sm ${textSub}`}>
@@ -578,6 +612,40 @@ export function ChatApp() {
               <Button variant="outline" className={`flex-1 ${isDark ? 'border-slate-700 text-white' : ''}`} onClick={() => setClearDeleteConfirm(null)} disabled={clearingChat}>Cancel</Button>
               <Button variant="destructive" className="flex-1" onClick={() => clearDeleteConfirm && handleClearChat(clearDeleteConfirm.roomId, clearDeleteConfirm.action)} disabled={clearingChat}>
                 {clearingChat ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <>{clearDeleteConfirm?.action === 'delete' ? 'Delete Chat' : 'Clear Chat'}</>}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Password Change Dialog */}
+      <Dialog open={showPasswordChange} onOpenChange={(open) => { if (!open) { setShowPasswordChange(false); setPasswordError(''); setPasswordSuccess(false); setCurrentPassword(''); setNewPassword(''); setConfirmPassword('') } }}>
+        <DialogContent className={`${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'} max-w-sm`}>
+          <DialogHeader>
+            <DialogTitle className={`flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              <Lock className="h-5 w-5 text-emerald-400" />
+              Change Password
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {passwordError && <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2"><p className="text-xs text-red-400">{passwordError}</p></div>}
+            {passwordSuccess && <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2"><p className="text-xs text-emerald-400">Password changed successfully!</p></div>}
+            <div className="space-y-1">
+              <label className={`text-[11px] font-medium ${textMuted}`}>Current Password</label>
+              <Input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className={inputBg} placeholder="Enter current password" />
+            </div>
+            <div className="space-y-1">
+              <label className={`text-[11px] font-medium ${textMuted}`}>New Password</label>
+              <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className={inputBg} placeholder="Enter new password (min 6 chars)" />
+            </div>
+            <div className="space-y-1">
+              <label className={`text-[11px] font-medium ${textMuted}`}>Confirm New Password</label>
+              <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputBg} placeholder="Confirm new password" onKeyDown={(e) => e.key === 'Enter' && handleChangePassword()} />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className={`flex-1 ${isDark ? 'border-slate-700 text-white' : ''}`} onClick={() => { setShowPasswordChange(false); setPasswordError(''); setCurrentPassword(''); setNewPassword(''); setConfirmPassword('') }} disabled={changingPassword}>Cancel</Button>
+              <Button className={`flex-1 bg-gradient-to-r ${tp.gradient} text-white`} onClick={handleChangePassword} disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword}>
+                {changingPassword ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Change Password'}
               </Button>
             </div>
           </div>
