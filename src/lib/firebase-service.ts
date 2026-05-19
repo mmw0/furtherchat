@@ -237,10 +237,11 @@ export async function createGroupChatRoom(name: string, creatorUid: string, part
 
 export function listenToChatRooms(uid: string, callback: (rooms: ChatRoom[]) => void): () => void {
   const roomsRef = collection(db, 'chatRooms')
+  // Note: Removed orderBy to avoid needing a composite index.
+  // Sorting is done client-side instead.
   const q = query(
     roomsRef,
     where('participants', 'array-contains', uid),
-    orderBy('updatedAt', 'desc'),
   )
   
   return onSnapshot(q, async (snapshot) => {
@@ -291,6 +292,9 @@ export function listenToChatRooms(uid: string, callback: (rooms: ChatRoom[]) => 
         createdAt: data.createdAt?.toMillis?.() || Date.now(),
       })
     }
+    
+    // Sort rooms by updatedAt descending (client-side, avoids needing composite index)
+    rooms.sort((a, b) => b.updatedAt - a.updatedAt)
     
     callback(rooms)
   }, (error) => {
