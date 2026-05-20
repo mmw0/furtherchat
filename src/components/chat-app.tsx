@@ -28,12 +28,12 @@ import {
 } from 'lucide-react'
 
 const THEME_PRESETS: Record<ThemePreset, { primary: string; primaryRgb: string; gradient: string; glow: string; name: string }> = {
-  emerald: { primary: 'bg-emerald-500', primaryRgb: '16,185,129', gradient: 'from-emerald-500 to-teal-500', glow: 'shadow-emerald-500/25', name: 'Emerald' },
-  ocean: { primary: 'bg-blue-500', primaryRgb: '59,130,246', gradient: 'from-blue-500 to-cyan-500', glow: 'shadow-blue-500/25', name: 'Ocean' },
-  sunset: { primary: 'bg-orange-500', primaryRgb: '249,115,22', gradient: 'from-orange-500 to-amber-500', glow: 'shadow-orange-500/25', name: 'Sunset' },
-  lavender: { primary: 'bg-violet-500', primaryRgb: '139,92,246', gradient: 'from-violet-500 to-purple-500', glow: 'shadow-violet-500/25', name: 'Lavender' },
-  rose: { primary: 'bg-pink-500', primaryRgb: '236,72,153', gradient: 'from-pink-500 to-rose-500', glow: 'shadow-pink-500/25', name: 'Rose' },
-  midnight: { primary: 'bg-indigo-500', primaryRgb: '99,102,241', gradient: 'from-indigo-500 to-blue-500', glow: 'shadow-indigo-500/25', name: 'Midnight' },
+  emerald: { primary: 'bg-emerald-500', primaryRgb: '16,185,129', gradient: 'from-emerald-500 to-teal-400', glow: 'shadow-emerald-500/30', name: 'Emerald' },
+  ocean: { primary: 'bg-blue-500', primaryRgb: '59,130,246', gradient: 'from-blue-500 to-cyan-400', glow: 'shadow-blue-500/30', name: 'Ocean' },
+  sunset: { primary: 'bg-orange-500', primaryRgb: '249,115,22', gradient: 'from-orange-500 to-amber-400', glow: 'shadow-orange-500/30', name: 'Sunset' },
+  lavender: { primary: 'bg-violet-500', primaryRgb: '139,92,246', gradient: 'from-violet-500 to-purple-400', glow: 'shadow-violet-500/30', name: 'Lavender' },
+  rose: { primary: 'bg-pink-500', primaryRgb: '236,72,153', gradient: 'from-pink-500 to-rose-400', glow: 'shadow-pink-500/30', name: 'Rose' },
+  midnight: { primary: 'bg-indigo-500', primaryRgb: '99,102,241', gradient: 'from-indigo-500 to-blue-400', glow: 'shadow-indigo-500/30', name: 'Midnight' },
 }
 
 function TickIndicator({ status, color }: { status: Message['status']; color: string }) {
@@ -47,8 +47,8 @@ function OnlineDot({ online, size = 'sm' }: { online: boolean; size?: 'sm' | 'md
   const s = size === 'sm' ? 'w-3 h-3' : 'w-3.5 h-3.5'
   const border = size === 'sm' ? 'border-2' : 'border-[2.5px]'
   return (
-    <span className={`absolute -bottom-0.5 -right-0.5 ${s} bg-emerald-500 rounded-full ${border} border-slate-900`}>
-      <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-75" />
+    <span className={`absolute -bottom-0.5 -right-0.5 ${s} rounded-full ${border} border-[#0c1220] bg-emerald-500 shadow-lg shadow-emerald-500/50`}>
+      <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-60" />
     </span>
   )
 }
@@ -356,19 +356,19 @@ export function ChatApp() {
 
   // ---- COLORS ----
   const c = isDark ? {
-    bg: 'bg-[#0a0f1a]', sidebar: 'bg-[#0f1525]', card: 'bg-white/5',
-    hover: 'hover:bg-white/5', border: 'border-white/8', input: 'bg-white/5 border-white/10',
+    bg: 'bg-[#080c16]', sidebar: 'bg-[#0c1220]', card: 'bg-white/[0.04]',
+    hover: 'hover:bg-white/[0.06]', border: 'border-white/[0.06]', input: 'bg-white/[0.06] border-white/[0.08]',
     text: 'text-white', muted: 'text-slate-400', sub: 'text-slate-500',
-    bubbleMine: `bg-gradient-to-br from-[${tp.primaryRgb}33] to-[${tp.primaryRgb}1a] border border-[${tp.primaryRgb}33]`,
-    bubbleOther: 'bg-white/5 border border-white/8',
-    headerBg: 'bg-[#0f1525]/80 backdrop-blur-xl', panelBg: 'bg-[#0f1525]',
+    bubbleMine: `bg-gradient-to-br from-[${tp.primaryRgb}28] to-[${tp.primaryRgb}12] border border-[${tp.primaryRgb}30]`,
+    bubbleOther: 'bg-white/[0.05] border border-white/[0.07]',
+    headerBg: 'bg-[#0c1220]/90 backdrop-blur-2xl', panelBg: 'bg-[#0c1220]',
   } : {
     bg: 'bg-slate-50', sidebar: 'bg-white', card: 'bg-slate-50',
     hover: 'hover:bg-slate-50', border: 'border-slate-200', input: 'bg-slate-100 border-slate-200',
     text: 'text-slate-900', muted: 'text-slate-500', sub: 'text-slate-400',
-    bubbleMine: `bg-gradient-to-br from-[${tp.primaryRgb}22] to-[${tp.primaryRgb}11] border border-[${tp.primaryRgb}33]`,
+    bubbleMine: `bg-gradient-to-br from-[${tp.primaryRgb}18] to-[${tp.primaryRgb}08] border border-[${tp.primaryRgb}25]`,
     bubbleOther: 'bg-white border border-slate-200',
-    headerBg: 'bg-white/80 backdrop-blur-xl', panelBg: 'bg-white',
+    headerBg: 'bg-white/90 backdrop-blur-2xl', panelBg: 'bg-white',
   }
 
   const otherUidInActiveRoom = activeRoom?.type === 'direct' ? activeRoom.participants.find(p => p !== currentUser?.uid) : null
@@ -886,7 +886,7 @@ export function ChatApp() {
             {/* Message Input */}
             <div className={`px-4 py-3 ${c.border} border-t`}>
               <div className={`flex items-end gap-2 ${isDark ? 'bg-white/5' : 'bg-slate-100'} rounded-2xl px-3 py-2`}>
-                <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className={`p-1.5 rounded-lg ${c.hover} ${c.muted} transition-colors shrink-0`}>
+                <button onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker) }} className={`p-1.5 rounded-lg ${c.hover} ${showEmojiPicker ? 'text-emerald-400' : c.muted} transition-colors shrink-0`}>
                   <Smile className="h-5 w-5" />
                 </button>
                 {showEmojiPicker && <EmojiPicker onSelect={(e) => setMessageInput(prev => prev + e)} onClose={() => setShowEmojiPicker(false)} isDark={isDark} />}
