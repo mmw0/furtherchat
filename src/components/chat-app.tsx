@@ -27,7 +27,7 @@ import {
   UserX, Clock, Bell, BellRing, Smile, Trash2,
   Palette, Moon, MoreVertical, Shield, ChevronRight,
   Camera, Sun, ImagePlus, Trash, Ban, Unlock,
-  Lock, Star,
+  Lock, Star, Copy, Wallpaper,
 } from 'lucide-react'
 
 const THEME_PRESETS: Record<ThemePreset, { primary: string; primaryRgb: string; gradient: string; glow: string; name: string; hex: string }> = {
@@ -50,7 +50,7 @@ function OnlineDot({ online, size = 'sm', isDark = true }: { online: boolean; si
   const s = size === 'sm' ? 'w-3 h-3' : 'w-3.5 h-3.5'
   const border = size === 'sm' ? 'border-2' : 'border-[2.5px]'
   return (
-    <span className={`absolute -bottom-0.5 -right-0.5 ${s} rounded-full ${border} ${isDark ? 'border-[#0c1220]' : 'border-white'} bg-emerald-500 shadow-lg shadow-emerald-500/50`}>
+    <span className={`absolute -bottom-0.5 -right-0.5 ${s} rounded-full ${border} ${isDark ? 'border-[#0c1220]' : 'border-white'} bg-emerald-500 shadow-lg shadow-emerald-500/50 online-dot-breathe`}>
       <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-60" />
     </span>
   )
@@ -132,6 +132,14 @@ export function ChatApp() {
   const [passwordSuccess, setPasswordSuccess] = useState(false)
   const [changingPassword, setChangingPassword] = useState(false)
   const [blockingUser, setBlockingUser] = useState<string | null>(null)
+  const [chatMenuOpen, setChatMenuOpen] = useState<string | null>(null)
+  const [chatWallpaper, setChatWallpaper] = useState<string>('none')
+  const [swipedMsgId, setSwipedMsgId] = useState<string | null>(null)
+  const [swipeX, setSwipeX] = useState(0)
+  const swipeStartXRef = useRef(0)
+  const [toastMsg, setToastMsg] = useState<string>('')
+  const [toastVisible, setToastVisible] = useState(false)
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const messageEndRef = useRef<HTMLDivElement>(null)
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -190,6 +198,17 @@ export function ChatApp() {
     document.addEventListener('click', handler)
     return () => document.removeEventListener('click', handler)
   }, [chatActionMenu])
+
+  // Close sidebar chat menu on outside click
+  useEffect(() => {
+    if (!chatMenuOpen) return
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('[data-sidebar-chat-menu]')) setChatMenuOpen(null)
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [chatMenuOpen])
 
   // Close sidebar search on outside click
   useEffect(() => {
@@ -491,10 +510,44 @@ export function ChatApp() {
     headerBg: 'bg-white/90 backdrop-blur-2xl', panelBg: 'bg-white',
   }
 
+  // Load chat wallpaper from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('chatWallpaper')
+      if (saved) setChatWallpaper(saved)
+    }
+  }, [])
+
+  const WALLPAPERS = [
+    { id: 'none', name: 'Default', preview: isDark ? '#080c16' : '#f8fafc' },
+    { id: 'ocean', name: 'Ocean', preview: '#0c1220' },
+    { id: 'forest', name: 'Forest', preview: '#0a1a0f' },
+    { id: 'sunset', name: 'Sunset', preview: '#1a0a1e' },
+    { id: 'midnight', name: 'Midnight', preview: '#05050f' },
+    { id: 'cocoa', name: 'Cocoa', preview: '#1a120e' },
+  ]
+
+  const handleSetWallpaper = (id: string) => {
+    setChatWallpaper(id)
+    localStorage.setItem('chatWallpaper', id)
+  }
+
+  const showToast = useCallback((msg: string) => {
+    setToastMsg(msg)
+    setToastVisible(true)
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current)
+    toastTimeoutRef.current = setTimeout(() => { setToastVisible(false) }, 2500)
+  }, [])
+
   const otherUidInActiveRoom = activeRoom?.type === 'direct' ? activeRoom.participants.find(p => p !== currentUser?.uid) : null
   const otherIsOnline = otherUidInActiveRoom ? !!onlineUsers[otherUidInActiveRoom]?.online : false
   const otherLastSeen = otherUidInActiveRoom ? onlineUsers[otherUidInActiveRoom]?.lastSeen || null : null
   const isOtherBlocked = otherUidInActiveRoom ? blockedUsers.includes(otherUidInActiveRoom) : false
+
+  const getWallpaperClass = () => {
+    if (chatWallpaper === 'none') return isDark ? 'chat-wallpaper-dark' : 'chat-wallpaper-light'
+    return `wallpaper-${chatWallpaper}${isDark ? '' : '-light'}`
+  }
 
   return (
     <div className={`h-screen flex overflow-hidden ${c.bg} transition-colors duration-300`}>
@@ -555,7 +608,7 @@ export function ChatApp() {
         </div>
 
         {/* Tab Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto tab-content-animate" key={sidebarTab}>
           {/* CHATS TAB */}
           {sidebarTab === 'chats' && (() => {
             const starredRooms = filteredRooms.filter(r => r.type === 'direct' && starredUsers.includes(r.participants.find(p => p !== currentUser?.uid) || ''))
@@ -596,7 +649,7 @@ export function ChatApp() {
                     const lastMsg = room.lastMessage
                     return (
                       <button key={room.id} onClick={() => { setActiveRoomId(room.id); setShowMobileChat(true) }}
-                        className={`w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-200 ${isActive ? (isDark ? 'bg-white/8' : 'bg-slate-100') : c.hover}`}>
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-200 chat-item-hover ${isActive ? (isDark ? 'bg-white/8' : 'bg-slate-100') : c.hover}`}>
                         <div className="relative shrink-0">
                           <Avatar avatar={room.avatar} name={room.name || 'Chat'} avatarColor={room.avatarColor || getAvatarColor(room.id)} size={44} />
                           <OnlineDot online={isOn} isDark={isDark} />
@@ -615,9 +668,29 @@ export function ChatApp() {
                             )}
                           </div>
                         </div>
-                        <button onClick={(e) => { e.stopPropagation(); otherUid && handleUnstarUser(otherUid) }} className="p-1 text-amber-400 hover:text-amber-300 transition-colors shrink-0">
-                          <Star className="h-3.5 w-3.5 fill-amber-400" />
-                        </button>
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button onClick={(e) => { e.stopPropagation(); otherUid && handleUnstarUser(otherUid) }} className="p-1 text-amber-400 hover:text-amber-300 transition-colors star-animate">
+                            <Star className="h-3.5 w-3.5 fill-amber-400" />
+                          </button>
+                          <div className="relative" data-sidebar-chat-menu>
+                            <button onClick={(e) => { e.stopPropagation(); setChatMenuOpen(chatMenuOpen === room.id ? null : room.id) }}
+                              className={`p-1 rounded-full ${c.hover} ${c.muted} hover:text-white transition-all`}>
+                              <MoreVertical className="h-3.5 w-3.5" />
+                            </button>
+                            {chatMenuOpen === room.id && (
+                              <div className={`absolute right-0 top-8 z-50 ${c.panelBg} border ${c.border} rounded-xl shadow-2xl py-1 min-w-[160px] animate-scale-in`}>
+                                <button onClick={(e) => { e.stopPropagation(); setClearDeleteConfirm({ roomId: room.id, action: 'clear' }); setChatMenuOpen(null) }}
+                                  className={`w-full px-4 py-2 text-left text-sm ${c.text} ${c.hover} flex items-center gap-2 btn-press`}>
+                                  <Trash2 className="h-3.5 w-3.5" /> Clear for me
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); setClearDeleteConfirm({ roomId: room.id, action: 'delete' }); setChatMenuOpen(null) }}
+                                  className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2 btn-press">
+                                  <Trash className="h-3.5 w-3.5" /> Delete chat
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </button>
                     )
                   })}
@@ -634,7 +707,7 @@ export function ChatApp() {
                 const lastMsg = room.lastMessage
                 return (
                   <button key={room.id} onClick={() => { setActiveRoomId(room.id); setShowMobileChat(true) }}
-                    className={`group w-full flex items-center gap-3 px-4 py-3 transition-all duration-200 ${isActive ? (isDark ? 'bg-white/8' : 'bg-slate-100') : c.hover} animate-slide-in`}
+                    className={`group w-full flex items-center gap-3 px-4 py-3 transition-all duration-200 chat-item-hover ${isActive ? (isDark ? 'bg-white/8' : 'bg-slate-100') : c.hover} animate-slide-in`}
                     style={{ animationDelay: `${idx * 30}ms` }}>
                     <div className="relative shrink-0">
                       <Avatar avatar={room.avatar} name={room.name || 'Chat'} avatarColor={room.avatarColor || getAvatarColor(room.id)} size={48} />
@@ -652,13 +725,31 @@ export function ChatApp() {
                             const roomMsgs = messages[room.id] || []
                             const unreadCount = roomMsgs.filter(m => m.senderId !== currentUser?.uid && !m.readBy?.includes(currentUser?.uid || '') && m.type !== 'system').length
                             return unreadCount > 0 ? (
-                              <span className={`min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-gradient-to-r ${tp.gradient} text-white text-[9px] font-bold px-1 animate-bounce-subtle`}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+                              <span className={`min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-gradient-to-r ${tp.gradient} text-white text-[9px] font-bold px-1 badge-animate`}>{unreadCount > 99 ? '99+' : unreadCount}</span>
                             ) : null
                           })()}
                           <span onClick={(e) => { e.stopPropagation(); isStarred ? handleUnstarUser(otherUid!) : otherUid && handleStarUser(otherUid) }}
-                            className={`p-1 cursor-pointer transition-colors ${isStarred ? 'text-amber-400' : 'text-slate-500 hover:text-amber-400 opacity-0 group-hover:opacity-100'}`}>
+                            className={`p-1 cursor-pointer transition-colors ${isStarred ? 'text-amber-400' : 'text-slate-500 hover:text-amber-400 opacity-0 group-hover:opacity-100'} star-animate`}>
                             <Star className={`h-3.5 w-3.5 ${isStarred ? 'fill-amber-400' : ''}`} />
                           </span>
+                          <div className="relative" data-sidebar-chat-menu>
+                            <button onClick={(e) => { e.stopPropagation(); setChatMenuOpen(chatMenuOpen === room.id ? null : room.id) }}
+                              className={`p-1 rounded-full ${c.hover} ${c.muted} hover:text-white transition-all opacity-0 group-hover:opacity-100`}>
+                              <MoreVertical className="h-3.5 w-3.5" />
+                            </button>
+                            {chatMenuOpen === room.id && (
+                              <div className={`absolute right-0 top-8 z-50 ${c.panelBg} border ${c.border} rounded-xl shadow-2xl py-1 min-w-[160px] animate-scale-in`}>
+                                <button onClick={(e) => { e.stopPropagation(); setClearDeleteConfirm({ roomId: room.id, action: 'clear' }); setChatMenuOpen(null) }}
+                                  className={`w-full px-4 py-2 text-left text-sm ${c.text} ${c.hover} flex items-center gap-2 btn-press`}>
+                                  <Trash2 className="h-3.5 w-3.5" /> Clear for me
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); setClearDeleteConfirm({ roomId: room.id, action: 'delete' }); setChatMenuOpen(null) }}
+                                  className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2 btn-press">
+                                  <Trash className="h-3.5 w-3.5" /> Delete chat
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-1 mt-0.5">
@@ -1023,6 +1114,22 @@ export function ChatApp() {
                 </div>
               </div>
 
+              {/* Chat Wallpaper */}
+              <div>
+                <h3 className={`text-[11px] font-bold uppercase tracking-wider mb-2 ${c.muted} flex items-center gap-1.5`}>
+                  <Wallpaper className="h-3 w-3" />Chat Wallpaper
+                </h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {WALLPAPERS.map((wp) => (
+                    <button key={wp.id} onClick={() => handleSetWallpaper(wp.id)}
+                      className={`flex flex-col items-center gap-1 py-2 px-2 rounded-xl text-[10px] font-medium transition-all duration-200 btn-press ${chatWallpaper === wp.id ? `bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow} ring-2 ring-emerald-400/50` : `${c.card} ${c.text} border ${c.border}`}`}>
+                      <div className="w-8 h-8 rounded-lg border border-white/10" style={{ background: wp.id === 'none' ? (isDark ? '#080c16' : '#f8fafc') : wp.preview }} />
+                      {wp.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Theme Color */}
               <div>
                 <h3 className={`text-[11px] font-bold uppercase tracking-wider mb-2 ${c.muted}`}>Accent Color</h3>
@@ -1183,7 +1290,7 @@ export function ChatApp() {
             )}
 
             {/* Messages */}
-            <div className={`flex-1 overflow-y-auto px-4 py-3 ${isDark ? 'chat-wallpaper-dark' : 'chat-wallpaper-light'}`}>
+            <div className={`flex-1 overflow-y-auto px-4 py-3 ${getWallpaperClass()}`}>
               {activeMessages
                 .filter(m => !m.deletedFor.includes(currentUser?.uid || ''))
                 .filter(m => chatSearchQuery && chatSearchQuery !== ' ' ? m.content.toLowerCase().includes(chatSearchQuery.toLowerCase()) : true)
@@ -1204,7 +1311,7 @@ export function ChatApp() {
                 return (
                   <div key={msg.id}>
                     {showDateSep && (
-                      <div className="flex justify-center my-4 animate-fade-in">
+                      <div className="flex justify-center my-4 msg-animate-in">
                         <span className={`text-[11px] ${c.muted} ${isDark ? 'bg-white/5' : 'bg-slate-100'} backdrop-blur-sm rounded-lg px-3 py-1`}>
                           {new Date(msg.createdAt).toDateString() === new Date().toDateString() ? 'Today' :
                            new Date(msg.createdAt).toDateString() === new Date(Date.now() - 86400000).toDateString() ? 'Yesterday' :
@@ -1212,10 +1319,31 @@ export function ChatApp() {
                         </span>
                       </div>
                     )}
-                  <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-1 ${showAvatar ? 'mt-3' : ''} msg-enter`}
+                  <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-1 ${showAvatar ? 'mt-3' : ''} msg-animate-in`}
+                    style={{ animationDelay: `${Math.min(idx * 30, 300)}ms` }}
                     onContextMenu={(e) => { e.preventDefault(); setContextMenuMessage(msg) }}
-                    onTouchStart={() => handleTouchStart(msg)} onTouchEnd={handleTouchEnd}>
-                    <div className={`flex items-end gap-2 max-w-[75%] ${isMine ? 'flex-row-reverse' : ''}`}>
+                    onTouchStart={() => handleTouchStart(msg)} onTouchEnd={handleTouchEnd}
+                    onTouchMove={(e) => {
+                      const touch = e.touches[0]
+                      const startX = swipeStartXRef.current
+                      if (startX && touch.clientX < startX - 50) {
+                        setSwipedMsgId(msg.id)
+                        setSwipeX(Math.min(startX - touch.clientX, 80))
+                      } else {
+                        setSwipedMsgId(null)
+                        setSwipeX(0)
+                      }
+                    }}
+                    onTouchStartCapture={(e) => { swipeStartXRef.current = e.touches[0].clientX }}
+                    >
+                    <div className={`flex items-end gap-2 max-w-[75%] ${isMine ? 'flex-row-reverse' : ''}`} style={swipedMsgId === msg.id ? { transform: `translateX(-${swipeX}px)`, transition: 'none' } : { transition: 'transform 0.2s ease' }}>
+                      {/* Swipe delete area */}
+                      {swipedMsgId === msg.id && isMine && (
+                        <div className="swipe-delete-area" style={{ width: `${swipeX}px` }}
+                          onClick={(e) => { e.stopPropagation(); setDeleteConfirm({ msg, forEveryone: false }); setSwipedMsgId(null); setSwipeX(0) }}>
+                          <Trash2 className="h-4 w-4" />
+                        </div>
+                      )}
                       {!isMine && (
                         <div className="w-7 shrink-0">
                           {showAvatar && <Avatar avatar={msg.senderAvatar} name={msg.senderName} avatarColor={msg.senderAvatarColor} size={28} />}
@@ -1287,7 +1415,7 @@ export function ChatApp() {
                   className={`flex-1 bg-transparent ${c.text} placeholder:text-slate-500 outline-none resize-none text-sm leading-5 max-h-24 py-1.5`}
                 />
                 <button onClick={handleSend} disabled={!messageInput.trim() || sendingMessage || isOtherBlocked}
-                  className={`p-2 rounded-xl bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow} disabled:opacity-30 transition-all duration-200 shrink-0 mb-0.5 active:scale-90`}>
+                  className={`p-2 rounded-xl bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow} disabled:opacity-30 transition-all duration-200 shrink-0 mb-0.5 active:scale-90 btn-press ${messageInput.trim() ? 'send-pulse' : ''}`}>
                   {sendingMessage ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-4 w-4" />}
                 </button>
               </div>
@@ -1302,21 +1430,21 @@ export function ChatApp() {
           <div className={`absolute ${isDark ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'} border rounded-xl shadow-2xl py-1 min-w-[180px] animate-scale-in`}
             style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
             onClick={(e) => e.stopPropagation()}>
-            <button onClick={() => { navigator.clipboard.writeText(contextMenuMessage.content); setContextMenuMessage(null) }}
-              className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} ${c.text} transition-colors flex items-center gap-2`}>
-              <Hash className="h-3.5 w-3.5" />Copy
+            <button onClick={() => { navigator.clipboard.writeText(contextMenuMessage.content); setContextMenuMessage(null); showToast('Message copied!') }}
+              className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} ${c.text} transition-colors flex items-center gap-2 btn-press`}>
+              <Copy className="h-3.5 w-3.5" />Copy
             </button>
             <button onClick={() => { setReplyingTo(contextMenuMessage); setContextMenuMessage(null) }}
-              className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} ${c.text} transition-colors flex items-center gap-2`}>
+              className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} ${c.text} transition-colors flex items-center gap-2 btn-press`}>
               <ChevronRight className="h-3.5 w-3.5" />Reply
             </button>
             <button onClick={() => { setDeleteConfirm({ msg: contextMenuMessage, forEveryone: false }); setContextMenuMessage(null) }}
-              className="w-full text-left px-4 py-2.5 text-sm hover:bg-red-500/10 text-red-400 transition-colors flex items-center gap-2">
+              className="w-full text-left px-4 py-2.5 text-sm hover:bg-red-500/10 text-red-400 transition-colors flex items-center gap-2 btn-press">
               <Trash2 className="h-3.5 w-3.5" />Delete for Me
             </button>
             {canDeleteForEveryone(contextMenuMessage) && (
               <button onClick={() => { setDeleteConfirm({ msg: contextMenuMessage, forEveryone: true }); setContextMenuMessage(null) }}
-                className="w-full text-left px-4 py-2.5 text-sm hover:bg-red-500/10 text-red-400 transition-colors flex items-center gap-2">
+                className="w-full text-left px-4 py-2.5 text-sm hover:bg-red-500/10 text-red-400 transition-colors flex items-center gap-2 btn-press">
                 <Trash2 className="h-3.5 w-3.5" />Delete for Everyone
               </button>
             )}
@@ -1479,6 +1607,16 @@ export function ChatApp() {
             </div>
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* ====== TOAST NOTIFICATION ====== */}
+      {toastVisible && (
+        <div className="fixed top-4 right-4 z-[200] toast-animate">
+          <div className={`${isDark ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'} border rounded-xl shadow-2xl px-4 py-3 flex items-center gap-2 text-sm font-medium`}>
+            <Check className="h-4 w-4 text-emerald-400" />
+            {toastMsg}
+          </div>
+        </div>
       )}
     </div>
   )
