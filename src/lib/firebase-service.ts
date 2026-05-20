@@ -293,6 +293,23 @@ export function listenToMessages(roomId: string, currentUid: string, callback: (
         replyTo: data.replyTo || null, replyToContent: data.replyToContent || null, replyToSender: data.replyToSender || null,
       }
     })
+    // Mark messages as "delivered" for messages sent by other users that are still 'sent'
+    const deliveredMsgs = msgs.filter(m => m.senderId !== currentUid && m.status === 'sent' && !m.deletedForEveryone && m.type !== 'system')
+    if (deliveredMsgs.length > 0) {
+      const dBatch = writeBatch(db)
+      deliveredMsgs.forEach(m => {
+        dBatch.update(doc(db, 'chatRooms', roomId, 'messages', m.id), { status: 'delivered' })
+      })
+      // Also update lastMessage status if needed
+      const lastM = msgs[msgs.length - 1]
+      if (lastM && deliveredMsgs.some(m => m.id === lastM.id) && lastM.senderId !== currentUid) {
+        dBatch.update(doc(db, 'chatRooms', roomId), {
+          'lastMessage.status': 'delivered',
+        })
+      }
+      dBatch.commit().catch(() => {})
+    }
+
     const unreadMsgs = msgs.filter(m => m.senderId !== currentUid && !m.readBy.includes(currentUid) && !m.deletedForEveryone && m.type !== 'system')
     if (unreadMsgs.length > 0) {
       const batch = writeBatch(db)
@@ -365,18 +382,24 @@ export async function deleteMessageForEveryone(roomId: string, messageId: string
 
 export async function clearChatForMe(roomId: string, uid: string): Promise<void> {
   const msgsSnap = await getDocs(collection(db, 'chatRooms', roomId, 'messages'))
-  const batch = writeBatch(db)
-  let count = 0
+  const updates: { id: string; deletedFor: string[] }[] = []
   msgsSnap.docs.forEach((docSnap) => {
     const data = docSnap.data()
     if (data.type === 'system') return
     const deletedFor: string[] = data.deletedFor || []
     if (!deletedFor.includes(uid)) {
-      batch.update(doc(db, 'chatRooms', roomId, 'messages', docSnap.id), { deletedFor: [...deletedFor, uid] })
-      count++
+      updates.push({ id: docSnap.id, deletedFor })
     }
   })
-  if (count > 0) await batch.commit()
+  // Firestore batch limit is 500 operations
+  for (let i = 0; i < updates.length; i += 400) {
+    const chunk = updates.slice(i, i + 400)
+    const batch = writeBatch(db)
+    chunk.forEach(u => {
+      batch.update(doc(db, 'chatRooms', roomId, 'messages', u.id), { deletedFor: [...u.deletedFor, uid] })
+    })
+    await batch.commit()
+  }
 }
 
 export async function deleteChatRoom(roomId: string, uid: string): Promise<void> {
@@ -391,11 +414,14 @@ export async function deleteChatRoom(roomId: string, uid: string): Promise<void>
       const allParticipants = data.participants as string[]
       const allDeleted = allParticipants.every((p: string) => newDeletedFor.includes(p))
       if (allDeleted) {
-        // Delete all messages first
+        // Delete all messages first (in chunks of 400 for batch limit)
         const msgsSnap = await getDocs(collection(db, 'chatRooms', roomId, 'messages'))
-        const batch = writeBatch(db)
-        msgsSnap.docs.forEach((d) => { batch.delete(d.ref) })
-        await batch.commit()
+        for (let i = 0; i < msgsSnap.docs.length; i += 400) {
+          const chunk = msgsSnap.docs.slice(i, i + 400)
+          const batch = writeBatch(db)
+          chunk.forEach((d) => { batch.delete(d.ref) })
+          await batch.commit()
+        }
         await deleteDoc(doc(db, 'chatRooms', roomId))
       } else {
         await updateDoc(doc(db, 'chatRooms', roomId), { deletedFor: newDeletedFor })

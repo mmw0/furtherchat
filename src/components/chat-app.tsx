@@ -42,12 +42,12 @@ function TickIndicator({ status, color }: { status: Message['status']; color: st
   return <svg width="18" height="9" viewBox="0 0 18 9" className="inline-block ml-1"><path d="M1 4.5L3.5 7L9 1" stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/><path d="M5 4.5L7.5 7L13 1" stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
 }
 
-function OnlineDot({ online, size = 'sm' }: { online: boolean; size?: 'sm' | 'md' }) {
+function OnlineDot({ online, size = 'sm', isDark = true }: { online: boolean; size?: 'sm' | 'md'; isDark?: boolean }) {
   if (!online) return null
   const s = size === 'sm' ? 'w-3 h-3' : 'w-3.5 h-3.5'
   const border = size === 'sm' ? 'border-2' : 'border-[2.5px]'
   return (
-    <span className={`absolute -bottom-0.5 -right-0.5 ${s} rounded-full ${border} border-[#0c1220] bg-emerald-500 shadow-lg shadow-emerald-500/50`}>
+    <span className={`absolute -bottom-0.5 -right-0.5 ${s} rounded-full ${border} ${isDark ? 'border-[#0c1220]' : 'border-white'} bg-emerald-500 shadow-lg shadow-emerald-500/50`}>
       <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-60" />
     </span>
   )
@@ -130,6 +130,7 @@ export function ChatApp() {
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const emojiBtnRef = useRef<HTMLButtonElement>(null)
+  const userSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const [emojiAnchorRect, setEmojiAnchorRect] = useState<DOMRect | null>(null)
 
   const preset = theme.preset
@@ -166,6 +167,16 @@ export function ChatApp() {
     }
   }, [messages[activeRoomId || '']?.length])
 
+  useEffect(() => {
+    if (!chatActionMenu) return
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('[data-chat-menu]')) setChatActionMenu(false)
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [chatActionMenu])
+
   // ---- HANDLERS ----
   const handleSend = useCallback(async () => {
     if (!messageInput.trim() || !activeRoomId || !currentUser || sendingMessage) return
@@ -182,6 +193,7 @@ export function ChatApp() {
     setMessageInput(v)
     if (!activeRoomId || !currentUser) return
     if (v.trim()) setTyping(activeRoomId, currentUser.uid, currentUser.displayName, true)
+    else setTyping(activeRoomId, currentUser.uid, currentUser.displayName, false)
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
     typingTimeoutRef.current = setTimeout(() => setTyping(activeRoomId!, currentUser!.uid, currentUser!.displayName, false), 3000)
   }, [activeRoomId, currentUser])
@@ -385,7 +397,7 @@ export function ChatApp() {
           <div className="flex items-center gap-3">
             <div className="relative cursor-pointer" onClick={() => setShowAvatarPicker(true)}>
               <Avatar avatar={currentUser?.avatar || null} name={currentUser?.displayName || ''} avatarColor={currentUser?.avatarColor || ''} size={40} />
-              <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-slate-700 rounded-full flex items-center justify-center border-2 border-[#0f1525]">
+              <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-slate-700 rounded-full flex items-center justify-center border-2 ${isDark ? 'border-[#0f1525]' : 'border-white'}`}>
                 <Camera className="w-2 h-2 text-white" />
               </div>
             </div>
@@ -447,15 +459,26 @@ export function ChatApp() {
                 className={`w-full flex items-center gap-3 px-4 py-3 transition-all ${isActive ? (isDark ? 'bg-white/8' : 'bg-slate-100') : c.hover}`}>
                 <div className="relative shrink-0">
                   <Avatar avatar={room.avatar} name={room.name || 'Chat'} avatarColor={room.avatarColor || getAvatarColor(room.id)} size={48} />
-                  <OnlineDot online={isOn} />
+                  <OnlineDot online={isOn} isDark={isDark} />
                 </div>
                 <div className={`flex-1 min-w-0 text-left border-b ${c.border} pb-3`}>
                   <div className="flex items-center justify-between">
-                    <h3 className={`font-semibold text-[14px] truncate ${c.text}`}>{room.name || 'Chat'}</h3>
-                    {lastMsg && <span className={`text-[10px] ${lastMsg.createdAt > Date.now() - 60000 ? 'text-emerald-400' : c.muted} shrink-0 ml-2`}>{formatTime(lastMsg.createdAt)}</span>}
+                    <div className="flex items-center gap-1 min-w-0">
+                      <h3 className={`font-semibold text-[14px] truncate ${c.text}`}>{room.name || 'Chat'}</h3>
+                    </div>
+                    <div className="flex items-center shrink-0 gap-1">
+                      {lastMsg && <span className={`text-[10px] ${lastMsg.createdAt > Date.now() - 60000 ? 'text-emerald-400' : c.muted}`}>{formatTime(lastMsg.createdAt)}</span>}
+                      {(() => {
+                        const roomMsgs = messages[room.id] || []
+                        const unreadCount = roomMsgs.filter(m => m.senderId !== currentUser?.uid && !m.readBy?.includes(currentUser?.uid || '') && m.type !== 'system').length
+                        return unreadCount > 0 ? (
+                          <span className={`min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-gradient-to-r ${tp.gradient} text-white text-[9px] font-bold px-1`}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+                        ) : null
+                      })()}
+                    </div>
                   </div>
                   <div className="flex items-center gap-1 mt-0.5">
-                    {lastMsg && lastMsg.senderId === currentUser?.uid && <TickIndicator status={lastMsg.status} color={lastMsg.status === 'read' ? '#53bdeb' : '#8696a0'} />}
+                    {lastMsg && lastMsg.senderId === currentUser?.uid && <TickIndicator status={lastMsg.status} color={lastMsg.status === 'read' ? '#53bdeb' : lastMsg.status === 'delivered' ? '#8696a0' : '#8696a0'} />}
                     {lastMsg ? (
                       <p className={`text-[12px] truncate ${c.muted}`}>
                         {lastMsg.type === 'deleted' ? 'Message deleted' : room.type === 'group' ? `${lastMsg.senderName}: ${lastMsg.content}` : lastMsg.content}
@@ -484,30 +507,33 @@ export function ChatApp() {
                     if (!val.trim()) {
                       setSearchResults([])
                     } else {
-                      // Check if it's an exact username match (lowercase, no spaces)
-                      const trimmed = val.trim().toLowerCase()
-                      const exactMatch = allUsers.filter(u => u.username === trimmed)
-                      if (exactMatch.length === 1) {
-                        // Exact match found - show only this user
-                        setSearchResults(exactMatch)
-                      } else {
-                        // Partial match - show users whose username or displayName starts with the search
-                        searchUsers(val.trim(), currentUser!.uid).then(results => {
-                          // Filter to only show results that start with the search term
-                          const filtered = results.filter(u =>
-                            u.username.toLowerCase().startsWith(trimmed) ||
-                            u.displayName.toLowerCase().startsWith(trimmed.toLowerCase())
-                          )
-                          setSearchResults(filtered)
-                        }).catch(() => {
-                          // Fallback: filter locally from allUsers
-                          const local = allUsers.filter(u =>
-                            u.username.toLowerCase().startsWith(trimmed) ||
-                            u.displayName.toLowerCase().startsWith(trimmed.toLowerCase())
-                          )
-                          setSearchResults(local)
-                        })
-                      }
+                      if (userSearchTimeoutRef.current) clearTimeout(userSearchTimeoutRef.current)
+                      userSearchTimeoutRef.current = setTimeout(() => {
+                        // Check if it's an exact username match (lowercase, no spaces)
+                        const trimmed = val.trim().toLowerCase()
+                        const exactMatch = allUsers.filter(u => u.username === trimmed)
+                        if (exactMatch.length === 1) {
+                          // Exact match found - show only this user
+                          setSearchResults(exactMatch)
+                        } else {
+                          // Partial match - show users whose username or displayName starts with the search
+                          searchUsers(val.trim(), currentUser!.uid).then(results => {
+                            // Filter to only show results that start with the search term
+                            const filtered = results.filter(u =>
+                              u.username.toLowerCase().startsWith(trimmed) ||
+                              u.displayName.toLowerCase().startsWith(trimmed.toLowerCase())
+                            )
+                            setSearchResults(filtered)
+                          }).catch(() => {
+                            // Fallback: filter locally from allUsers
+                            const local = allUsers.filter(u =>
+                              u.username.toLowerCase().startsWith(trimmed) ||
+                              u.displayName.toLowerCase().startsWith(trimmed.toLowerCase())
+                            )
+                            setSearchResults(local)
+                          })
+                        }
+                      }, 300)
                     }
                   }} className={`pl-10 h-9 rounded-xl text-sm ${c.input} ${c.text} placeholder:text-slate-500 border focus-visible:ring-1 focus-visible:ring-emerald-500/30`} />
                 </div>
@@ -538,7 +564,7 @@ export function ChatApp() {
                   <div key={user.uid} className={`flex items-center gap-3 px-4 py-3 ${c.hover} transition-colors`}>
                     <div className="relative shrink-0">
                       <Avatar avatar={user.avatar} name={user.displayName} avatarColor={user.avatarColor || getAvatarColor(user.uid)} size={44} />
-                      <OnlineDot online={isOn} />
+                      <OnlineDot online={isOn} isDark={isDark} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className={`font-medium text-[14px] truncate ${c.text}`}>{user.displayName}</p>
@@ -673,7 +699,7 @@ export function ChatApp() {
                 <div className="flex items-center gap-3">
                   <div className="relative cursor-pointer" onClick={() => setShowAvatarPicker(true)}>
                     <Avatar avatar={currentUser?.avatar || null} name={currentUser?.displayName || ''} avatarColor={currentUser?.avatarColor || ''} size={56} />
-                    <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full flex items-center justify-center shadow-md border-2 border-[#0f1525]">
+                    <div className={`absolute -bottom-1 -right-1 w-6 h-6 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full flex items-center justify-center shadow-md border-2 ${isDark ? 'border-[#0f1525]' : 'border-white'}`}>
                       <Camera className="w-3 h-3 text-white" />
                     </div>
                   </div>
@@ -783,7 +809,7 @@ export function ChatApp() {
                 </button>
                 <div className="relative">
                   <Avatar avatar={activeRoom.avatar} name={activeRoom.name || 'Chat'} avatarColor={activeRoom.avatarColor || getAvatarColor(activeRoom.id)} size={40} />
-                  <OnlineDot online={otherIsOnline} size="md" />
+                  <OnlineDot online={otherIsOnline} size="md" isDark={isDark} />
                 </div>
                 <div className="min-w-0">
                   <h3 className={`font-semibold text-sm ${c.text}`}>{activeRoom.name || 'Chat'}</h3>
@@ -798,13 +824,13 @@ export function ChatApp() {
               </div>
               <div className="flex items-center gap-0.5">
                 <button onClick={() => setChatSearchQuery(chatSearchQuery ? '' : ' ')} className={`p-2 rounded-xl ${c.hover} ${c.muted} transition-colors`}><Search className="h-4 w-4" /></button>
-                <button onClick={() => setChatActionMenu(!chatActionMenu)} className={`p-2 rounded-xl ${c.hover} ${c.muted} transition-colors`}><MoreVertical className="h-4 w-4" /></button>
+                <button onClick={() => setChatActionMenu(!chatActionMenu)} data-chat-menu className={`p-2 rounded-xl ${c.hover} ${c.muted} transition-colors`}><MoreVertical className="h-4 w-4" /></button>
               </div>
             </div>
 
             {/* Chat Action Menu */}
             {chatActionMenu && (
-              <div className={`absolute top-14 right-4 z-50 ${isDark ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'} border rounded-xl shadow-xl py-1 min-w-[180px]`}>
+              <div data-chat-menu className={`absolute top-14 right-4 z-50 ${isDark ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'} border rounded-xl shadow-xl py-1 min-w-[180px]`}>
                 <button onClick={() => { setClearDeleteConfirm({ roomId: activeRoom.id, action: 'clear' }); setChatActionMenu(false) }}
                   className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} ${c.text} transition-colors`}>Clear Chat</button>
                 <button onClick={() => { setClearDeleteConfirm({ roomId: activeRoom.id, action: 'delete' }); setChatActionMenu(false) }}
@@ -823,13 +849,15 @@ export function ChatApp() {
             {/* Messages */}
             <div className={`flex-1 overflow-y-auto px-4 py-3 ${isDark ? 'chat-wallpaper-dark' : 'chat-wallpaper-light'}`}>
               {activeMessages
-                .filter(m => !m.deletedFor.includes(currentUser?.uid || '') && !(m.deletedForEveryone && m.type === 'deleted' && m.senderId !== currentUser?.uid))
+                .filter(m => !m.deletedFor.includes(currentUser?.uid || ''))
                 .filter(m => chatSearchQuery && chatSearchQuery !== ' ' ? m.content.toLowerCase().includes(chatSearchQuery.toLowerCase()) : true)
                 .map((msg, idx, arr) => {
                 const isMine = msg.senderId === currentUser?.uid
                 const isDeleted = msg.deletedForEveryone || msg.type === 'deleted'
                 const isSystem = msg.type === 'system'
                 const showAvatar = !isMine && !isSystem && (idx === 0 || arr[idx - 1]?.senderId !== msg.senderId)
+                const prevMsg = idx > 0 ? arr[idx - 1] : null
+                const showDateSep = !prevMsg || new Date(msg.createdAt).toDateString() !== new Date(prevMsg.createdAt).toDateString()
 
                 if (isSystem) return (
                   <div key={msg.id} className="flex justify-center my-3">
@@ -838,7 +866,17 @@ export function ChatApp() {
                 )
 
                 return (
-                  <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-1 ${showAvatar ? 'mt-3' : ''}`}
+                  <div key={msg.id}>
+                    {showDateSep && (
+                      <div className="flex justify-center my-4">
+                        <span className={`text-[11px] ${c.muted} ${isDark ? 'bg-white/5' : 'bg-slate-100'} backdrop-blur-sm rounded-lg px-3 py-1`}>
+                          {new Date(msg.createdAt).toDateString() === new Date().toDateString() ? 'Today' :
+                           new Date(msg.createdAt).toDateString() === new Date(Date.now() - 86400000).toDateString() ? 'Yesterday' :
+                           new Date(msg.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
+                      </div>
+                    )}
+                  <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-1 ${showAvatar ? 'mt-3' : ''}`}
                     onContextMenu={(e) => { e.preventDefault(); setContextMenuMessage(msg) }}
                     onTouchStart={() => handleTouchStart(msg)} onTouchEnd={handleTouchEnd}>
                     <div className={`flex items-end gap-2 max-w-[75%] ${isMine ? 'flex-row-reverse' : ''}`}>
@@ -879,6 +917,7 @@ export function ChatApp() {
                       </div>
                     </div>
                   </div>
+                  </div>
                 )
               })}
               <div ref={messageEndRef} />
@@ -905,7 +944,7 @@ export function ChatApp() {
                 {showEmojiPicker && <EmojiPicker onSelect={(e) => setMessageInput(prev => prev + e)} onClose={() => setShowEmojiPicker(false)} isDark={isDark} anchorRect={emojiAnchorRect} />}
                 <textarea
                   value={messageInput}
-                  onChange={(e) => handleTyping(e.target.value)}
+                  onChange={(e) => { handleTyping(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px' }}
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
                   placeholder="Type a message..."
                   rows={1}
@@ -928,6 +967,10 @@ export function ChatApp() {
           <div className={`absolute ${isDark ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'} border rounded-xl shadow-2xl py-1 min-w-[180px]`}
             style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
             onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => { navigator.clipboard.writeText(contextMenuMessage.content); setContextMenuMessage(null) }}
+              className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} ${c.text} transition-colors flex items-center gap-2`}>
+              <Hash className="h-3.5 w-3.5" />Copy
+            </button>
             <button onClick={() => { setReplyingTo(contextMenuMessage); setContextMenuMessage(null) }}
               className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} ${c.text} transition-colors flex items-center gap-2`}>
               <ChevronRight className="h-3.5 w-3.5" />Reply
