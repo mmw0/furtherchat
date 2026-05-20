@@ -110,9 +110,14 @@ export function AuthForm() {
         <div className="bg-white/[0.07] backdrop-blur-2xl rounded-3xl border border-white/10 shadow-2xl shadow-black/40 overflow-hidden">
           {/* Header */}
           <div className="p-8 text-center">
-            <div className="w-[72px] h-[72px] rounded-full bg-[#00C853] flex items-center justify-center mx-auto mb-5 shadow-xl shadow-emerald-500/25 hover:scale-105 transition-transform duration-300">
+            <div className="w-[72px] h-[72px] rounded-full flex items-center justify-center mx-auto mb-5 shadow-xl shadow-emerald-500/25 hover:scale-105 transition-transform duration-300" style={{ background: 'linear-gradient(135deg, #00E676, #00BFA5)' }}>
               <svg className="w-10 h-10" viewBox="0 0 100 100" fill="none">
-                <path d="M50 22C34.5 22 22 33 22 46.5c0 7.5 3.8 14.2 9.8 18.6L28 78l13.5-5.4c2.7 0.8 5.5 1.2 8.5 1.2 15.5 0 28-11 28-24.5S65.5 22 50 22z" fill="white"/>
+                <defs>
+                  <filter id="bsh"><feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.15"/></filter>
+                </defs>
+                <g filter="url(#bsh)">
+                  <path d="M50 20C33.4 20 20 31 20 45c0 7.8 4 14.7 10.2 19L26 80l15.2-6c2.8.7 5.7 1 8.8 1 16.6 0 30-11 30-25S66.6 20 50 20z" fill="white"/>
+                </g>
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-white mb-1">

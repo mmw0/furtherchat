@@ -53,9 +53,14 @@ export default function Home() {
         <div className="text-center relative z-10">
           {/* Logo */}
           <div className="relative mx-auto mb-6">
-            <div className="w-[88px] h-[88px] rounded-full bg-[#00C853] flex items-center justify-center mx-auto shadow-2xl shadow-emerald-500/30 animate-float">
+            <div className="w-[88px] h-[88px] rounded-full flex items-center justify-center mx-auto shadow-2xl shadow-emerald-500/30 animate-float" style={{ background: 'linear-gradient(135deg, #00E676, #00BFA5)' }}>
               <svg className="w-12 h-12" viewBox="0 0 100 100" fill="none">
-                <path d="M50 22C34.5 22 22 33 22 46.5c0 7.5 3.8 14.2 9.8 18.6L28 78l13.5-5.4c2.7 0.8 5.5 1.2 8.5 1.2 15.5 0 28-11 28-24.5S65.5 22 50 22z" fill="white"/>
+                <defs>
+                  <filter id="bsh"><feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.15"/></filter>
+                </defs>
+                <g filter="url(#bsh)">
+                  <path d="M50 20C33.4 20 20 31 20 45c0 7.8 4 14.7 10.2 19L26 80l15.2-6c2.8.7 5.7 1 8.8 1 16.6 0 30-11 30-25S66.6 20 50 20z" fill="white"/>
+                </g>
               </svg>
             </div>
           </div>
