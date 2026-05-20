@@ -460,7 +460,7 @@ export function ChatApp() {
   // Dynamic favicon based on theme
   useEffect(() => {
     const color = tp.hex.replace('#', '%23')
-    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='2' y='2' width='96' height='96' rx='22' fill='${color}'/><path d='M22 24h56c5.5 0 10 4.5 10 10v22c0 5.5-4.5 10-10 10H42L30 80V66H22c-5.5 0-10-4.5-10-10V34c0-5.5 4.5-10 10-10z' fill='white'/></svg>`
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='2' y='2' width='96' height='96' rx='22' fill='${color}'/><circle cx='50' cy='38' r='25' fill='white'/><path d='M33 55 L22 76 L44 60 Z' fill='white'/></svg>`
     const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement || document.createElement('link')
     link.setAttribute('rel', 'icon')
     link.setAttribute('type', 'image/svg+xml')
@@ -564,7 +564,8 @@ export function ChatApp() {
               <div className="flex flex-col items-center justify-center py-20 px-4 animate-fade-in">
                 <div className={`w-20 h-20 rounded-[18px] bg-[#00C896] flex items-center justify-center mb-4 shadow-xl ${tp.glow}`}>
                   <svg className="w-10 h-10" viewBox="0 0 100 100" fill="none">
-                    <path d="M22 24h56c5.5 0 10 4.5 10 10v22c0 5.5-4.5 10-10 10H42L30 80V66H22c-5.5 0-10-4.5-10-10V34c0-5.5 4.5-10 10-10z" fill="white"/>
+                    <circle cx="50" cy="38" r="25" fill="white"/>
+                    <path d="M33 55 L22 76 L44 60 Z" fill="white"/>
                   </svg>
                 </div>
                 <p className={`text-sm ${c.muted} text-center mb-3`}>No conversations yet</p>
@@ -1049,7 +1050,8 @@ export function ChatApp() {
           <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
             <div className={`w-24 h-24 rounded-[22px] bg-[#00C896] flex items-center justify-center mb-6 shadow-2xl ${tp.glow} animate-float`}>
               <svg className="w-14 h-14" viewBox="0 0 100 100" fill="none">
-                <path d="M22 24h56c5.5 0 10 4.5 10 10v22c0 5.5-4.5 10-10 10H42L30 80V66H22c-5.5 0-10-4.5-10-10V34c0-5.5 4.5-10 10-10z" fill="white"/>
+                <circle cx="50" cy="38" r="25" fill="white"/>
+                <path d="M33 55 L22 76 L44 60 Z" fill="white"/>
               </svg>
             </div>
             <h2 className={`text-xl font-bold ${c.text} mb-2`}>FurtherChat</h2>

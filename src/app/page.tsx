@@ -55,7 +55,8 @@ export default function Home() {
           <div className="relative mx-auto mb-6">
             <div className="w-[88px] h-[88px] rounded-[22px] bg-[#00C896] flex items-center justify-center mx-auto shadow-2xl shadow-emerald-500/30 animate-float">
               <svg className="w-12 h-12" viewBox="0 0 100 100" fill="none">
-                <path d="M22 24h56c5.5 0 10 4.5 10 10v22c0 5.5-4.5 10-10 10H42L30 80V66H22c-5.5 0-10-4.5-10-10V34c0-5.5 4.5-10 10-10z" fill="white"/>
+                <circle cx="50" cy="38" r="25" fill="white"/>
+                <path d="M33 55 L22 76 L44 60 Z" fill="white"/>
               </svg>
             </div>
           </div>
