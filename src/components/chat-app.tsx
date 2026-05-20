@@ -31,7 +31,7 @@ import {
 } from 'lucide-react'
 
 const THEME_PRESETS: Record<ThemePreset, { primary: string; primaryRgb: string; gradient: string; glow: string; name: string; hex: string }> = {
-  emerald: { primary: 'bg-emerald-500', primaryRgb: '0,230,118', gradient: 'from-emerald-400 to-teal-400', glow: 'shadow-emerald-500/30', name: 'Emerald', hex: '#00E676' },
+  emerald: { primary: 'bg-emerald-500', primaryRgb: '16,185,129', gradient: 'from-emerald-500 to-sky-500', glow: 'shadow-emerald-500/30', name: 'Emerald', hex: '#10B981' },
   ocean: { primary: 'bg-blue-500', primaryRgb: '59,130,246', gradient: 'from-blue-500 to-cyan-400', glow: 'shadow-blue-500/30', name: 'Ocean', hex: '#3b82f6' },
   sunset: { primary: 'bg-orange-500', primaryRgb: '249,115,22', gradient: 'from-orange-500 to-amber-400', glow: 'shadow-orange-500/30', name: 'Sunset', hex: '#f97316' },
   lavender: { primary: 'bg-violet-500', primaryRgb: '139,92,246', gradient: 'from-violet-500 to-purple-400', glow: 'shadow-violet-500/30', name: 'Lavender', hex: '#8b5cf6' },
@@ -460,7 +460,7 @@ export function ChatApp() {
   // Dynamic favicon based on theme
   useEffect(() => {
     const color = tp.hex.replace('#', '%23')
-    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='bg' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='${color}' stop-opacity='1'/><stop offset='100%25' stop-color='${color}' stop-opacity='0.75'/></linearGradient><filter id='sh'><feDropShadow dx='0' dy='2' stdDeviation='3' flood-color='%23000' flood-opacity='0.15'/></filter></defs><circle cx='50' cy='50' r='50' fill='url(%23bg)'/><g filter='url(%23sh)'><path d='M50 20C33.4 20 20 31 20 45c0 7.8 4 14.7 10.2 19L26 80l15.2-6c2.8.7 5.7 1 8.8 1 16.6 0 30-11 30-25S66.6 20 50 20z' fill='white'/></g></svg>`
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='bg' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='${color}'/><stop offset='100%25' stop-color='${color}' stop-opacity='0.7'/></linearGradient><linearGradient id='glass' x1='0' y1='0' x2='0' y2='1'><stop offset='0%25' stop-color='white' stop-opacity='0.3'/><stop offset='50%25' stop-color='white' stop-opacity='0'/></linearGradient><filter id='sh'><feDropShadow dx='0' dy='2' stdDeviation='3' flood-color='%23000' flood-opacity='0.2'/></filter></defs><circle cx='50' cy='50' r='50' fill='url(%23bg)'/><g filter='url(%23sh)'><path d='M50 20C33.4 20 20 31 20 45c0 7.8 4 14.7 10.2 19L26 80l15.2-6c2.8.7 5.7 1 8.8 1 16.6 0 30-11 30-25S66.6 20 50 20z' fill='white'/></g><path d='M50 20C33.4 20 20 31 20 45c0 7.8 4 14.7 10.2 19L26 80l15.2-6c2.8.7 5.7 1 8.8 1 16.6 0 30-11 30-25S66.6 20 50 20z' fill='url(%23glass)'/></svg>`
     const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement || document.createElement('link')
     link.setAttribute('rel', 'icon')
     link.setAttribute('type', 'image/svg+xml')
@@ -562,14 +562,19 @@ export function ChatApp() {
             const regularRooms = filteredRooms.filter(r => !(r.type === 'direct' && starredUsers.includes(r.participants.find(p => p !== currentUser?.uid) || '')))
             return filteredRooms.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 px-4 animate-fade-in">
-                <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-4 shadow-xl ${tp.glow}`} style={{ background: 'linear-gradient(135deg, #00E676, #00BFA5)' }}>
+                <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-4 shadow-xl ${tp.glow}`} style={{ background: 'linear-gradient(135deg, #10B981, #0EA5E9)' }}>
                   <svg className="w-10 h-10" viewBox="0 0 100 100" fill="none">
                     <defs>
-                      <filter id="csh"><feDropShadow dx="0" dy="1" stdDeviation="2" floodColor="#000" floodOpacity="0.12"/></filter>
+                      <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="white" stopOpacity="0.3"/>
+                        <stop offset="50%" stopColor="white" stopOpacity="0"/>
+                      </linearGradient>
+                      <filter id="csh"><feDropShadow dx="0" dy="1" stdDeviation="2" floodColor="#000" floodOpacity="0.15"/></filter>
                     </defs>
                     <g filter="url(#csh)">
                       <path d="M50 20C33.4 20 20 31 20 45c0 7.8 4 14.7 10.2 19L26 80l15.2-6c2.8.7 5.7 1 8.8 1 16.6 0 30-11 30-25S66.6 20 50 20z" fill="white"/>
                     </g>
+                    <path d="M50 20C33.4 20 20 31 20 45c0 7.8 4 14.7 10.2 19L26 80l15.2-6c2.8.7 5.7 1 8.8 1 16.6 0 30-11 30-25S66.6 20 50 20z" fill="url(#glass)"/>
                   </svg>
                 </div>
                 <p className={`text-sm ${c.muted} text-center mb-3`}>No conversations yet</p>
@@ -1052,14 +1057,19 @@ export function ChatApp() {
       <div className={`${!showMobileChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col ${c.bg} transition-colors duration-300`}>
         {!activeRoom ? (
           <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
-            <div className={`w-24 h-24 rounded-full flex items-center justify-center mb-6 shadow-2xl ${tp.glow} animate-float`} style={{ background: 'linear-gradient(135deg, #00E676, #00BFA5)' }}>
+            <div className={`w-24 h-24 rounded-full flex items-center justify-center mb-6 shadow-2xl ${tp.glow} animate-float`} style={{ background: 'linear-gradient(135deg, #10B981, #0EA5E9)' }}>
               <svg className="w-14 h-14" viewBox="0 0 100 100" fill="none">
                 <defs>
-                  <filter id="ash"><feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.15"/></filter>
+                  <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="white" stopOpacity="0.3"/>
+                    <stop offset="50%" stopColor="white" stopOpacity="0"/>
+                  </linearGradient>
+                  <filter id="ash"><feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.2"/></filter>
                 </defs>
                 <g filter="url(#ash)">
                   <path d="M50 20C33.4 20 20 31 20 45c0 7.8 4 14.7 10.2 19L26 80l15.2-6c2.8.7 5.7 1 8.8 1 16.6 0 30-11 30-25S66.6 20 50 20z" fill="white"/>
                 </g>
+                <path d="M50 20C33.4 20 20 31 20 45c0 7.8 4 14.7 10.2 19L26 80l15.2-6c2.8.7 5.7 1 8.8 1 16.6 0 30-11 30-25S66.6 20 50 20z" fill="url(#glass)"/>
               </svg>
             </div>
             <h2 className={`text-xl font-bold ${c.text} mb-2`}>FurtherChat</h2>
