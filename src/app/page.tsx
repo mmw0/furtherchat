@@ -54,15 +54,8 @@ export default function Home() {
           {/* Logo */}
           <div className="relative mx-auto mb-6">
             <div className="w-[88px] h-[88px] rounded-3xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center mx-auto shadow-2xl shadow-emerald-500/30 animate-float">
-              <svg className="w-11 h-11 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                <path d="M9 10h.01M12 10h.01M15 10h.01" />
-              </svg>
-            </div>
-            {/* Shield badge */}
-            <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center shadow-lg animate-scale-in" style={{ animationDelay: '0.3s' }}>
-              <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              <svg className="w-11 h-11 text-white" viewBox="0 0 100 100" fill="none">
+                <path d="M20 22 H80 C86 22 88 25 88 30 V58 C88 63 86 66 80 66 H38 L26 80 V66 H20 C14 66 12 63 12 58 V30 C12 25 14 22 20 22Z" stroke="white" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </div>
           </div>
