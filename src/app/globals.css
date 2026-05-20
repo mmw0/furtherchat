@@ -315,3 +315,46 @@ button:active:not(:disabled) {
   transform: scale(0.95);
   transition: transform 0.1s ease;
 }
+
+/* Performance: will-change for animated elements */
+.animate-bounce,
+.animate-ping,
+.animate-pulse,
+.animate-fade-in,
+.animate-slide-in,
+.animate-slide-up,
+.animate-scale-in,
+.animate-float,
+.animate-bounce-subtle,
+.animate-pulse-glow,
+.msg-enter,
+.loading-shimmer,
+.btn-glow,
+.hover-lift {
+  will-change: transform, opacity;
+}
+
+/* Performance: reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Performance: GPU acceleration for chat messages */
+[class*="msg-enter"],
+[class*="animate-slide"] {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* Performance: smooth scrolling with GPU */
+.overflow-y-auto,
+.overflow-auto {
+  -webkit-overflow-scrolling: touch;
+}

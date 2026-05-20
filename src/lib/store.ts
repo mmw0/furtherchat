@@ -95,8 +95,8 @@ interface AppState {
   onlineUsers: Record<string, { online: boolean; lastSeen: number }>
   setOnlineUsers: (users: Record<string, { online: boolean; lastSeen: number }>) => void
   setUserOnline: (uid: string, online: boolean) => void
-  sidebarTab: 'chats' | 'users' | 'requests' | 'settings'
-  setSidebarTab: (tab: 'chats' | 'users' | 'requests' | 'settings') => void
+  sidebarTab: 'chats' | 'star' | 'users' | 'requests' | 'settings'
+  setSidebarTab: (tab: 'chats' | 'star' | 'users' | 'requests' | 'settings') => void
   showMobileChat: boolean
   setShowMobileChat: (show: boolean) => void
   searchQuery: string

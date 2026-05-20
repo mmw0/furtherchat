@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react'
 import { useAppStore, getAvatarColor, getInitials, BUILT_IN_AVATARS } from '@/lib/store'
 import { isFirebaseConfigured } from '@/lib/firebase'
 import {
@@ -16,7 +16,7 @@ import {
   starUser, unstarUser, listenToStarredUsers,
 } from '@/lib/firebase-service'
 import type { Message, ThemePreset } from '@/lib/store'
-import { EmojiPicker } from '@/components/emoji-picker'
+const LazyEmojiPicker = lazy(() => import('@/components/emoji-picker').then(m => ({ default: m.EmojiPicker })))
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -27,7 +27,7 @@ import {
   UserX, Clock, Bell, BellRing, Smile, Trash2,
   Palette, Moon, MoreVertical, Shield, ChevronRight,
   Camera, Sun, ImagePlus, Trash, Ban, Unlock,
-  Lock, AlertTriangle, Star, Bookmark,
+  Lock, Star,
 } from 'lucide-react'
 
 const THEME_PRESETS: Record<ThemePreset, { primary: string; primaryRgb: string; gradient: string; glow: string; name: string; hex: string }> = {
@@ -61,7 +61,7 @@ function Avatar({ avatar, name, avatarColor, size = 40 }: { avatar: string | nul
   if (avatar?.startsWith('data:image')) {
     return (
       <div className="rounded-full overflow-hidden" style={{ width: size, height: size }}>
-        <img src={avatar} alt={name} className="w-full h-full object-cover" />
+        <img src={avatar} alt={name} className="w-full h-full object-cover" loading="lazy" />
       </div>
     )
   }
@@ -449,7 +449,25 @@ export function ChatApp() {
   const activeRoom = chatRooms.find(r => r.id === activeRoomId)
   const activeMessages = activeRoomId ? (messages[activeRoomId] || []) : []
   const activeTyping = activeRoomId ? (typingUsers[activeRoomId] || []) : []
-  const filteredRooms = chatRooms.filter(room => !searchQuery || (room.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredRooms = useMemo(() => chatRooms.filter(room => !searchQuery || (room.name || '').toLowerCase().includes(searchQuery.toLowerCase())), [chatRooms, searchQuery])
+
+  const starredUserDetails = useMemo(() => {
+    return starredUsers
+      .map(uid => allUsers.find(u => u.uid === uid))
+      .filter((u): u is NonNullable<typeof u> => !!u)
+  }, [starredUsers, allUsers])
+
+  // Dynamic favicon based on theme
+  useEffect(() => {
+    const color = tp.hex.replace('#', '%23')
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='5' y='5' width='90' height='90' rx='18' fill='${color}'/><path d='M25 35 L50 25 L75 35 L75 60 C75 75 50 85 50 85 C50 85 25 75 25 60Z' fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/></svg>`
+    const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement || document.createElement('link')
+    link.setAttribute('rel', 'icon')
+    link.setAttribute('type', 'image/svg+xml')
+    link.setAttribute('href', 'data:image/svg+xml,' + svg)
+    if (!link.parentNode) document.head.appendChild(link)
+    document.title = 'FurtherChat'
+  }, [preset])
 
   const formatTime = (ts: number) => { const d = new Date(ts); return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
   const formatLastSeen = (ts: number) => {
@@ -521,10 +539,13 @@ export function ChatApp() {
 
         {/* Tabs */}
         <div className={`flex ${c.border} border-b`}>
-          {([['chats', MessageCircle, 'Chats'], ['users', Users, 'Users'], ['requests', pendingReceivedCount > 0 ? BellRing : Bell, 'Requests']] as const).map(([tab, Icon, label]) => (
+          {([['chats', MessageCircle, 'Chats'], ['star', Star, 'Star'], ['users', Users, 'Users'], ['requests', pendingReceivedCount > 0 ? BellRing : Bell, 'Requests']] as const).map(([tab, Icon, label]) => (
             <button key={tab} onClick={() => { setSidebarTab(tab as any); setRequestError(''); setRequestSuccess('') }}
               className={`flex-1 py-2.5 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all relative ${sidebarTab === tab ? c.text : c.muted}`}>
               <Icon className="h-3.5 w-3.5" />{label}
+              {tab === 'star' && starredUsers.length > 0 && (
+                <span className="absolute -top-0.5 right-2 bg-gradient-to-r from-amber-400 to-yellow-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">{starredUsers.length}</span>
+              )}
               {tab === 'requests' && pendingReceivedCount > 0 && (
                 <span className="absolute -top-0.5 right-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 animate-bounce-subtle">{pendingReceivedCount}</span>
               )}
@@ -601,7 +622,7 @@ export function ChatApp() {
                 const lastMsg = room.lastMessage
                 return (
                   <button key={room.id} onClick={() => { setActiveRoomId(room.id); setShowMobileChat(true) }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 transition-all duration-200 ${isActive ? (isDark ? 'bg-white/8' : 'bg-slate-100') : c.hover} animate-slide-in`}
+                    className={`group w-full flex items-center gap-3 px-4 py-3 transition-all duration-200 ${isActive ? (isDark ? 'bg-white/8' : 'bg-slate-100') : c.hover} animate-slide-in`}
                     style={{ animationDelay: `${idx * 30}ms` }}>
                     <div className="relative shrink-0">
                       <Avatar avatar={room.avatar} name={room.name || 'Chat'} avatarColor={room.avatarColor || getAvatarColor(room.id)} size={48} />
@@ -622,6 +643,10 @@ export function ChatApp() {
                               <span className={`min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-gradient-to-r ${tp.gradient} text-white text-[9px] font-bold px-1 animate-bounce-subtle`}>{unreadCount > 99 ? '99+' : unreadCount}</span>
                             ) : null
                           })()}
+                          <span onClick={(e) => { e.stopPropagation(); isStarred ? handleUnstarUser(otherUid!) : otherUid && handleStarUser(otherUid) }}
+                            className={`p-1 cursor-pointer transition-colors ${isStarred ? 'text-amber-400' : 'text-slate-500 hover:text-amber-400 opacity-0 group-hover:opacity-100'}`}>
+                            <Star className={`h-3.5 w-3.5 ${isStarred ? 'fill-amber-400' : ''}`} />
+                          </span>
                         </div>
                       </div>
                       <div className="flex items-center gap-1 mt-0.5">
@@ -639,6 +664,53 @@ export function ChatApp() {
                 )
               })}
             </>)
+          })()}
+
+          {/* STAR TAB */}
+          {sidebarTab === 'star' && (() => {
+            if (starredUserDetails.length === 0) {
+              return (
+                <div className="flex flex-col items-center justify-center py-20 px-4 animate-fade-in">
+                  <div className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-4 shadow-xl ${tp.glow}`}>
+                    <Star className="h-9 w-9 text-white" />
+                  </div>
+                  <p className={`text-sm ${c.muted} text-center mb-3`}>No starred users yet</p>
+                  <p className={`text-xs ${c.sub} text-center max-w-[200px]`}>Star users you chat with frequently for quick access</p>
+                </div>
+              )
+            }
+
+            return (
+              <div>
+                {starredUserDetails.map((user) => {
+                  const isOn = !!onlineUsers[user.uid]?.online
+                  const room = chatRooms.find(r => r.type === 'direct' && r.participants.includes(user.uid))
+                  return (
+                    <button key={user.uid} onClick={() => { if (room) { setActiveRoomId(room.id); setShowMobileChat(true) } }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 transition-all duration-200 ${room ? c.hover : ''}`}>
+                      <div className="relative shrink-0">
+                        <Avatar avatar={user.avatar} name={user.displayName} avatarColor={user.avatarColor || getAvatarColor(user.uid)} size={48} />
+                        <OnlineDot online={isOn} isDark={isDark} />
+                      </div>
+                      <div className="flex-1 min-w-0 text-left">
+                        <div className="flex items-center gap-1">
+                          <h3 className={`font-semibold text-[14px] truncate ${c.text}`}>{user.displayName}</h3>
+                        </div>
+                        <p className={`text-[12px] ${c.muted}`}>
+                          @{user.username} · <span className={isOn ? 'text-emerald-400' : ''}>{isOn ? 'online' : 'offline'}</span>
+                        </p>
+                        {room?.lastMessage && (
+                          <p className={`text-[11px] ${c.sub} truncate mt-0.5`}>{room.lastMessage.type === 'deleted' ? 'Message deleted' : room.lastMessage.content}</p>
+                        )}
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); handleUnstarUser(user.uid) }} className="p-1.5 text-amber-400 hover:text-amber-300 transition-colors shrink-0">
+                        <Star className="h-4 w-4 fill-amber-400" />
+                      </button>
+                    </button>
+                  )
+                })}
+              </div>
+            )
           })()}
 
           {/* USERS TAB */}
@@ -809,37 +881,6 @@ export function ChatApp() {
                     ))}
                   </div>
                 )}
-                {/* Accepted Requests - Chat Now */}
-                {receivedRequests.filter(r => r.status === 'accepted' && r.chatRoomId).length > 0 && (
-                  <div>
-                    <div className={`mx-4 border-b ${c.border}`} />
-                    <div className="px-4 py-2"><h3 className={`text-[11px] font-bold uppercase tracking-wider ${c.muted}`}>Accepted</h3></div>
-                    {receivedRequests.filter(r => r.status === 'accepted' && r.chatRoomId).map((req) => {
-                      const roomExists = chatRooms.some(r => r.id === req.chatRoomId)
-                      return (
-                        <div key={req.id} className={`px-4 py-3 ${c.border} border-b ${roomExists ? 'cursor-pointer ' + c.hover : ''}`}
-                          onClick={() => { if (roomExists && req.chatRoomId) { handleOpenChatFromRequest(req.chatRoomId) } }}>
-                          <div className="flex items-center gap-3">
-                            <div className="shrink-0">
-                              <Avatar avatar={req.fromAvatar} name={req.fromDisplayName} avatarColor={req.fromAvatarColor || getAvatarColor(req.fromUid)} size={40} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className={`font-medium text-[13px] truncate ${c.text}`}>{req.fromDisplayName}</p>
-                              <p className={`text-[11px] ${c.muted}`}>@{req.fromUsername}</p>
-                            </div>
-                            {roomExists ? (
-                              <Button size="sm" className={`h-7 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 rounded-lg px-3 shadow-md ${tp.glow}`} onClick={(e) => { e.stopPropagation(); req.chatRoomId && handleOpenChatFromRequest(req.chatRoomId) }}>
-                                <MessageCircle className="h-3 w-3" />Chat
-                              </Button>
-                            ) : (
-                              <Badge className={`${isDark ? 'bg-slate-500/15 text-slate-400' : 'bg-slate-100 text-slate-500'} text-[10px] rounded-lg border-0`}>Deleted</Badge>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
                 {/* Sent Requests */}
                 {sentRequests.filter(r => r.status === 'pending').length > 0 && (
                   <div>
@@ -864,37 +905,6 @@ export function ChatApp() {
                         </div>
                       </div>
                     ))}
-                  </div>
-                )}
-                {/* Sent & Accepted */}
-                {sentRequests.filter(r => r.status === 'accepted' && r.chatRoomId).length > 0 && (
-                  <div>
-                    <div className={`mx-4 border-b ${c.border}`} />
-                    <div className="px-4 py-2"><h3 className={`text-[11px] font-bold uppercase tracking-wider ${c.muted}`}>Accepted</h3></div>
-                    {sentRequests.filter(r => r.status === 'accepted' && r.chatRoomId).map((req) => {
-                      const roomExists = chatRooms.some(r => r.id === req.chatRoomId)
-                      return (
-                        <div key={req.id} className={`px-4 py-3 ${c.border} border-b ${roomExists ? 'cursor-pointer ' + c.hover : ''}`}
-                          onClick={() => { if (roomExists && req.chatRoomId) { handleOpenChatFromRequest(req.chatRoomId) } }}>
-                          <div className="flex items-center gap-3">
-                            <div className="shrink-0">
-                              <Avatar avatar={req.toAvatar} name={req.toDisplayName} avatarColor={req.toAvatarColor || getAvatarColor(req.toUid)} size={40} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className={`font-medium text-[13px] truncate ${c.text}`}>{req.toDisplayName}</p>
-                              <p className={`text-[11px] text-emerald-400`}>Request accepted</p>
-                            </div>
-                            {roomExists ? (
-                              <Button size="sm" className={`h-7 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 rounded-lg px-3 shadow-md ${tp.glow}`} onClick={(e) => { e.stopPropagation(); req.chatRoomId && handleOpenChatFromRequest(req.chatRoomId) }}>
-                                <MessageCircle className="h-3 w-3" />Chat
-                              </Button>
-                            ) : (
-                              <Badge className={`${isDark ? 'bg-slate-500/15 text-slate-400' : 'bg-slate-100 text-slate-500'} text-[10px] rounded-lg border-0`}>Deleted</Badge>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
                   </div>
                 )}
               </>)}
@@ -1243,7 +1253,7 @@ export function ChatApp() {
                 <button ref={emojiBtnRef} onClick={(e) => { e.stopPropagation(); if (showEmojiPicker) { setShowEmojiPicker(false) } else { setEmojiAnchorRect(emojiBtnRef.current?.getBoundingClientRect() || null); setShowEmojiPicker(true) } }} className={`p-1.5 rounded-lg ${c.hover} ${showEmojiPicker ? 'text-emerald-400' : c.muted} transition-colors shrink-0 mb-0.5`}>
                   <Smile className="h-5 w-5" />
                 </button>
-                {showEmojiPicker && <EmojiPicker onSelect={(e) => setMessageInput(prev => prev + e)} onClose={() => setShowEmojiPicker(false)} isDark={isDark} anchorRect={emojiAnchorRect} />}
+                {showEmojiPicker && <Suspense fallback={<div className="w-64 h-48 animate-pulse bg-white/5 rounded-xl" />}><LazyEmojiPicker onSelect={(e) => setMessageInput(prev => prev + e)} onClose={() => setShowEmojiPicker(false)} isDark={isDark} anchorRect={emojiAnchorRect} /></Suspense>}
                 <textarea
                   value={messageInput}
                   onChange={(e) => { handleTyping(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px' }}
