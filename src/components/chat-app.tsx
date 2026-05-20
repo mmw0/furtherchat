@@ -27,13 +27,13 @@ import {
   Camera, Sun, ImagePlus, Trash,
 } from 'lucide-react'
 
-const THEME_PRESETS: Record<ThemePreset, { primary: string; primaryRgb: string; gradient: string; glow: string; name: string }> = {
-  emerald: { primary: 'bg-emerald-500', primaryRgb: '16,185,129', gradient: 'from-emerald-500 to-teal-400', glow: 'shadow-emerald-500/30', name: 'Emerald' },
-  ocean: { primary: 'bg-blue-500', primaryRgb: '59,130,246', gradient: 'from-blue-500 to-cyan-400', glow: 'shadow-blue-500/30', name: 'Ocean' },
-  sunset: { primary: 'bg-orange-500', primaryRgb: '249,115,22', gradient: 'from-orange-500 to-amber-400', glow: 'shadow-orange-500/30', name: 'Sunset' },
-  lavender: { primary: 'bg-violet-500', primaryRgb: '139,92,246', gradient: 'from-violet-500 to-purple-400', glow: 'shadow-violet-500/30', name: 'Lavender' },
-  rose: { primary: 'bg-pink-500', primaryRgb: '236,72,153', gradient: 'from-pink-500 to-rose-400', glow: 'shadow-pink-500/30', name: 'Rose' },
-  midnight: { primary: 'bg-indigo-500', primaryRgb: '99,102,241', gradient: 'from-indigo-500 to-blue-400', glow: 'shadow-indigo-500/30', name: 'Midnight' },
+const THEME_PRESETS: Record<ThemePreset, { primary: string; primaryRgb: string; gradient: string; glow: string; name: string; hex: string }> = {
+  emerald: { primary: 'bg-emerald-500', primaryRgb: '16,185,129', gradient: 'from-emerald-500 to-teal-400', glow: 'shadow-emerald-500/30', name: 'Emerald', hex: '#10b981' },
+  ocean: { primary: 'bg-blue-500', primaryRgb: '59,130,246', gradient: 'from-blue-500 to-cyan-400', glow: 'shadow-blue-500/30', name: 'Ocean', hex: '#3b82f6' },
+  sunset: { primary: 'bg-orange-500', primaryRgb: '249,115,22', gradient: 'from-orange-500 to-amber-400', glow: 'shadow-orange-500/30', name: 'Sunset', hex: '#f97316' },
+  lavender: { primary: 'bg-violet-500', primaryRgb: '139,92,246', gradient: 'from-violet-500 to-purple-400', glow: 'shadow-violet-500/30', name: 'Lavender', hex: '#8b5cf6' },
+  rose: { primary: 'bg-pink-500', primaryRgb: '236,72,153', gradient: 'from-pink-500 to-rose-400', glow: 'shadow-pink-500/30', name: 'Rose', hex: '#ec4899' },
+  midnight: { primary: 'bg-indigo-500', primaryRgb: '99,102,241', gradient: 'from-indigo-500 to-blue-400', glow: 'shadow-indigo-500/30', name: 'Midnight', hex: '#6366f1' },
 }
 
 function TickIndicator({ status, color }: { status: Message['status']; color: string }) {
@@ -129,6 +129,8 @@ export function ChatApp() {
   const listenersRef = useRef<(() => void)[]>([])
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const emojiBtnRef = useRef<HTMLButtonElement>(null)
+  const [emojiAnchorRect, setEmojiAnchorRect] = useState<DOMRect | null>(null)
 
   const preset = theme.preset
   const tp = THEME_PRESETS[preset]
@@ -152,6 +154,7 @@ export function ChatApp() {
 
   useEffect(() => {
     if (!activeRoomId || !isFirebaseConfigured() || !currentUser) return
+    setShowEmojiPicker(false)
     const u1 = listenToMessages(activeRoomId, currentUser.uid, (msgs) => setMessages(activeRoomId, msgs))
     const u2 = listenToTyping(activeRoomId, (u) => setTypingUsers(activeRoomId, u.filter(n => n !== currentUser?.displayName)))
     return () => { u1(); u2() }
@@ -359,15 +362,13 @@ export function ChatApp() {
     bg: 'bg-[#080c16]', sidebar: 'bg-[#0c1220]', card: 'bg-white/[0.04]',
     hover: 'hover:bg-white/[0.06]', border: 'border-white/[0.06]', input: 'bg-white/[0.06] border-white/[0.08]',
     text: 'text-white', muted: 'text-slate-400', sub: 'text-slate-500',
-    bubbleMine: `bg-gradient-to-br from-[${tp.primaryRgb}28] to-[${tp.primaryRgb}12] border border-[${tp.primaryRgb}30]`,
-    bubbleOther: 'bg-white/[0.05] border border-white/[0.07]',
+    bubbleMine: '', bubbleOther: '',
     headerBg: 'bg-[#0c1220]/90 backdrop-blur-2xl', panelBg: 'bg-[#0c1220]',
   } : {
     bg: 'bg-slate-50', sidebar: 'bg-white', card: 'bg-slate-50',
     hover: 'hover:bg-slate-50', border: 'border-slate-200', input: 'bg-slate-100 border-slate-200',
     text: 'text-slate-900', muted: 'text-slate-500', sub: 'text-slate-400',
-    bubbleMine: `bg-gradient-to-br from-[${tp.primaryRgb}18] to-[${tp.primaryRgb}08] border border-[${tp.primaryRgb}25]`,
-    bubbleOther: 'bg-white border border-slate-200',
+    bubbleMine: '', bubbleOther: '',
     headerBg: 'bg-white/90 backdrop-blur-2xl', panelBg: 'bg-white',
   }
 
@@ -733,7 +734,7 @@ export function ChatApp() {
                   {(Object.entries(THEME_PRESETS) as [ThemePreset, typeof THEME_PRESETS[ThemePreset]][]).map(([key, val]) => (
                     <button key={key} onClick={() => setTheme({ preset: key })}
                       className={`flex items-center gap-1.5 py-2 px-2.5 rounded-xl text-[11px] font-medium transition-all ${preset === key ? `bg-gradient-to-r ${val.gradient} text-white shadow-md ${val.glow}` : `${c.card} ${c.text} border ${c.border}`}`}>
-                      <div className={`w-3 h-3 rounded-full ${val.primary}`} />{val.name}
+                      <div className={`w-3.5 h-3.5 rounded-full ${val.primary} shadow-sm`} style={{ boxShadow: preset === key ? `0 0 8px ${val.hex}40` : 'none' }} />{val.name}
                     </button>
                   ))}
                 </div>
@@ -846,10 +847,16 @@ export function ChatApp() {
                             <span className="font-medium">{msg.replyToSender}</span>: {msg.replyToContent}
                           </div>
                         )}
-                        <div className={`px-3 py-2 rounded-2xl ${isMine
-                          ? `bg-gradient-to-br from-[rgba(${tp.primaryRgb},0.2)] to-[rgba(${tp.primaryRgb},0.1)] border border-[rgba(${tp.primaryRgb},0.2)]`
-                          : `${isDark ? 'bg-white/5 border border-white/8' : 'bg-white border border-slate-200'}`
-                        } ${isDeleted ? 'italic' : ''}`}>
+                        <div className={`px-3 py-2 rounded-2xl ${isDeleted ? 'italic' : ''}`} style={isMine ? {
+                          background: `linear-gradient(135deg, rgba(${tp.primaryRgb},0.22) 0%, rgba(${tp.primaryRgb},0.08) 100%)`,
+                          border: `1px solid rgba(${tp.primaryRgb},0.18)`,
+                        } : isDark ? {
+                          background: 'rgba(255,255,255,0.05)',
+                          border: '1px solid rgba(255,255,255,0.07)',
+                        } : {
+                          background: '#ffffff',
+                          border: '1px solid #e2e8f0',
+                        }}>
                           {!isMine && showAvatar && activeRoom?.type === 'group' && (
                             <p className={`text-[10px] font-medium mb-0.5`} style={{ color: msg.senderAvatarColor || getAvatarColor(msg.senderId) }}>{msg.senderName}</p>
                           )}
@@ -886,10 +893,10 @@ export function ChatApp() {
             {/* Message Input */}
             <div className={`px-4 py-3 ${c.border} border-t`}>
               <div className={`flex items-end gap-2 ${isDark ? 'bg-white/5' : 'bg-slate-100'} rounded-2xl px-3 py-2`}>
-                <button onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker) }} className={`p-1.5 rounded-lg ${c.hover} ${showEmojiPicker ? 'text-emerald-400' : c.muted} transition-colors shrink-0`}>
+                <button ref={emojiBtnRef} onClick={(e) => { e.stopPropagation(); if (showEmojiPicker) { setShowEmojiPicker(false) } else { setEmojiAnchorRect(emojiBtnRef.current?.getBoundingClientRect() || null); setShowEmojiPicker(true) } }} className={`p-1.5 rounded-lg ${c.hover} ${showEmojiPicker ? 'text-emerald-400' : c.muted} transition-colors shrink-0`}>
                   <Smile className="h-5 w-5" />
                 </button>
-                {showEmojiPicker && <EmojiPicker onSelect={(e) => setMessageInput(prev => prev + e)} onClose={() => setShowEmojiPicker(false)} isDark={isDark} />}
+                {showEmojiPicker && <EmojiPicker onSelect={(e) => setMessageInput(prev => prev + e)} onClose={() => setShowEmojiPicker(false)} isDark={isDark} anchorRect={emojiAnchorRect} />}
                 <textarea
                   value={messageInput}
                   onChange={(e) => handleTyping(e.target.value)}
