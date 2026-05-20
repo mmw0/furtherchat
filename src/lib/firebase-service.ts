@@ -299,7 +299,28 @@ export function listenToMessages(roomId: string, currentUid: string, callback: (
       unreadMsgs.forEach(m => {
         batch.update(doc(db, 'chatRooms', roomId, 'messages', m.id), { readBy: [...m.readBy, currentUid], status: 'read' })
       })
+      // Also update lastMessage status in the chat room if the last message is being marked as read
+      const lastMsg = msgs[msgs.length - 1]
+      if (lastMsg && unreadMsgs.some(m => m.id === lastMsg.id)) {
+        batch.update(doc(db, 'chatRooms', roomId), {
+          'lastMessage.status': 'read',
+          'lastMessage.readBy': [...lastMsg.readBy, currentUid],
+        })
+      }
       batch.commit().catch(() => {})
+    }
+    // Also sync lastMessage status: if the last message is already read but lastMessage in chat room still shows 'sent'
+    const lastMsg = msgs[msgs.length - 1]
+    if (lastMsg && lastMsg.status === 'read' && lastMsg.senderId === currentUid) {
+      // The sender is viewing the chat, and their last message is read. Ensure chat room's lastMessage reflects this.
+      getDoc(doc(db, 'chatRooms', roomId)).then(roomSnap => {
+        if (roomSnap.exists() && roomSnap.data().lastMessage?.status !== 'read' && roomSnap.data().lastMessage?.senderId === currentUid) {
+          updateDoc(doc(db, 'chatRooms', roomId), {
+            'lastMessage.status': 'read',
+            'lastMessage.readBy': lastMsg.readBy,
+          }).catch(() => {})
+        }
+      }).catch(() => {})
     }
     callback(msgs)
   }, (error) => { console.error('Error listening to messages:', error) })
