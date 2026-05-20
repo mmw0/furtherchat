@@ -16,6 +16,12 @@ import { auth, db, rtdb } from './firebase'
 import type { User, Message, ChatRoom, ChatRequest, MessageStatus } from './store'
 import { getAvatarColor } from './store'
 
+// AI Assistant constants
+export const AI_UID = 'furtherai_assistant'
+export const AI_USERNAME = 'furtherai'
+export const AI_DISPLAY_NAME = 'FurtherAI'
+export const AI_AVATAR_COLOR = '#8b5cf6'
+
 export interface SendChatRequestResult {
   type: 'request' | 'restored'
   roomId?: string
@@ -507,10 +513,16 @@ export function listenToChatRooms(uid: string, callback: (rooms: ChatRoom[]) => 
       if (data.type === 'direct') {
         const otherUid = data.participants.find((p: string) => p !== uid)
         if (otherUid) {
-          try {
-            const d = await getDoc(doc(db, 'users', otherUid))
-            if (d.exists()) { const od = d.data(); roomName = od.displayName || od.username; roomAvatar = od.avatar }
-          } catch { roomName = 'User' }
+          // Handle AI user specially
+          if (otherUid === AI_UID) {
+            roomName = AI_DISPLAY_NAME
+            roomAvatar = null
+          } else {
+            try {
+              const d = await getDoc(doc(db, 'users', otherUid))
+              if (d.exists()) { const od = d.data(); roomName = od.displayName || od.username; roomAvatar = od.avatar }
+            } catch { roomName = 'User' }
+          }
         }
       }
       rooms.push({
@@ -902,4 +914,140 @@ export async function rejectChatRequest(requestId: string): Promise<void> {
 
 export async function cancelChatRequest(requestId: string): Promise<void> {
   await deleteDoc(doc(db, 'chatRequests', requestId))
+}
+
+// ==================== AI ASSISTANT ====================
+
+// Ensure the AI "user" document exists in Firestore
+export async function ensureAIUser(): Promise<void> {
+  const aiUserDoc = await getDoc(doc(db, 'users', AI_UID))
+  if (!aiUserDoc.exists()) {
+    await setDoc(doc(db, 'users', AI_UID), {
+      username: AI_USERNAME,
+      displayName: AI_DISPLAY_NAME,
+      avatar: null,
+      avatarColor: AI_AVATAR_COLOR,
+      isOnline: true,
+      lastSeen: null,
+      usernameChangedAt: null,
+      lastActiveAt: serverTimestamp() as Timestamp,
+      createdAt: serverTimestamp() as Timestamp,
+      blockedUsers: [],
+      starredUsers: [],
+      isAI: true,
+    })
+    // Reserve the AI username
+    await setDoc(doc(db, 'usernames', AI_USERNAME), { uid: AI_UID, createdAt: serverTimestamp() as Timestamp })
+  }
+}
+
+// Create or get the AI chat room for a user
+export async function createAIChatRoom(userUid: string): Promise<string> {
+  // Ensure AI user exists
+  await ensureAIUser()
+
+  // Check if AI chat room already exists
+  const roomsRef = collection(db, 'chatRooms')
+  const q = query(roomsRef, where('type', '==', 'direct'), where('participants', 'array-contains', userUid))
+  const snapshot = await getDocs(q)
+
+  for (const docSnap of snapshot.docs) {
+    const data = docSnap.data()
+    if (data.participants.includes(AI_UID)) {
+      // Room exists - restore if user deleted it
+      const deletedFor: string[] = data.deletedFor || []
+      if (deletedFor.includes(userUid)) {
+        await updateDoc(doc(db, 'chatRooms', docSnap.id), {
+          deletedFor: deletedFor.filter((uid: string) => uid !== userUid),
+          updatedAt: serverTimestamp() as Timestamp,
+        })
+      }
+      return docSnap.id
+    }
+  }
+
+  // Create new AI chat room
+  const docRef = await addDoc(collection(db, 'chatRooms'), {
+    type: 'direct',
+    name: null,
+    avatar: null,
+    avatarColor: AI_AVATAR_COLOR,
+    participants: [userUid, AI_UID],
+    deletedFor: [],
+    createdAt: serverTimestamp() as Timestamp,
+    updatedAt: serverTimestamp() as Timestamp,
+    lastMessage: null,
+    isAIRoom: true,
+  })
+
+  // Add welcome message from AI
+  await addDoc(collection(db, 'chatRooms', docRef.id, 'messages'), {
+    content: encryptMessage("Hey there! I'm FurtherAI, your AI assistant in FurtherChat! I can help you with questions, coding, creative writing, jokes, advice, and much more. Just type anything and I'll respond! What would you like to talk about? ", docRef.id),
+    type: 'text',
+    senderId: AI_UID,
+    senderName: AI_DISPLAY_NAME,
+    senderAvatar: null,
+    senderAvatarColor: AI_AVATAR_COLOR,
+    createdAt: serverTimestamp() as Timestamp,
+    status: 'read' as MessageStatus,
+    readBy: [userUid],
+    deletedFor: [],
+    deletedForEveryone: false,
+    encrypted: true,
+    isAIMessage: true,
+  })
+
+  // Update last message
+  await updateDoc(doc(db, 'chatRooms', docRef.id), {
+    lastMessage: {
+      content: encryptMessage("Hey there! I'm FurtherAI, your AI assistant in FurtherChat! I can help you with questions, coding, creative writing, jokes, advice, and much more. Just type anything and I'll respond! What would you like to talk about? ", docRef.id),
+      type: 'text',
+      senderId: AI_UID,
+      senderName: AI_DISPLAY_NAME,
+      createdAt: serverTimestamp() as Timestamp,
+      status: 'read' as MessageStatus,
+      readBy: [userUid],
+      encrypted: true,
+      isAIMessage: true,
+    },
+    updatedAt: serverTimestamp() as Timestamp,
+  })
+
+  return docRef.id
+}
+
+// Send AI response message to a chat room
+export async function sendAIMessage(roomId: string, content: string): Promise<string> {
+  const encryptedContent = encryptMessage(sanitizeInput(content, 2000), roomId)
+  const messageData = {
+    content: encryptedContent,
+    type: 'text',
+    senderId: AI_UID,
+    senderName: AI_DISPLAY_NAME,
+    senderAvatar: null,
+    senderAvatarColor: AI_AVATAR_COLOR,
+    createdAt: serverTimestamp() as Timestamp,
+    status: 'read' as MessageStatus,
+    readBy: [],
+    deletedFor: [],
+    deletedForEveryone: false,
+    encrypted: true,
+    isAIMessage: true,
+  }
+  const docRef = await addDoc(collection(db, 'chatRooms', roomId, 'messages'), messageData)
+  await updateDoc(doc(db, 'chatRooms', roomId), {
+    lastMessage: {
+      content: encryptMessage(content.length > 100 ? content.slice(0, 100) + '...' : content, roomId),
+      type: 'text',
+      senderId: AI_UID,
+      senderName: AI_DISPLAY_NAME,
+      createdAt: serverTimestamp() as Timestamp,
+      status: 'read' as MessageStatus,
+      readBy: [],
+      encrypted: true,
+      isAIMessage: true,
+    },
+    updatedAt: serverTimestamp() as Timestamp,
+  })
+  return docRef.id
 }

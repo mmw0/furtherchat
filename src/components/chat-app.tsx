@@ -15,6 +15,7 @@ import {
   blockUser, unblockUser, listenToBlockedUsers,
   starUser, unstarUser, listenToStarredUsers,
   deleteAccount,
+  createAIChatRoom, sendAIMessage, AI_UID, AI_DISPLAY_NAME, AI_AVATAR_COLOR,
 } from '@/lib/firebase-service'
 import type { Message, ThemePreset } from '@/lib/store'
 const LazyEmojiPicker = lazy(() => import('@/components/emoji-picker').then(m => ({ default: m.EmojiPicker })))
@@ -29,6 +30,7 @@ import {
   Palette, Moon, MoreVertical, Shield, ChevronRight,
   Camera, Sun, ImagePlus, Trash, Ban, Unlock,
   Lock, Star, Copy, Wallpaper, Volume2, VolumeX, Pin, AlertTriangle, UserMinus,
+  Bot, Sparkles,
 } from 'lucide-react'
 
 const THEME_PRESETS: Record<ThemePreset, { primary: string; primaryRgb: string; gradient: string; glow: string; name: string; hex: string }> = {
@@ -98,6 +100,45 @@ function TypingWaveDots() {
   )
 }
 
+function AIAvatar({ size = 40 }: { size?: number }) {
+  return (
+    <div className="ai-avatar-container" style={{ width: size, height: size }}>
+      <div
+        className="rounded-full flex items-center justify-center ai-glow-ring"
+        style={{
+          width: size,
+          height: size,
+          background: 'linear-gradient(135deg, #8b5cf6, #6366f1, #3b82f6)',
+        }}
+      >
+        <div className="relative flex items-center justify-center">
+          <Bot className="text-white" style={{ width: size * 0.5, height: size * 0.5 }} />
+          <Sparkles
+            className="absolute -top-0.5 -right-0.5 text-amber-300"
+            style={{ width: size * 0.2, height: size * 0.2 }}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AIThinkingIndicator() {
+  return (
+    <div className="flex justify-start mb-2 ai-msg-animate">
+      <div className="flex items-end gap-2 max-w-[75%]">
+        <AIAvatar size={28} />
+        <div className="ai-thinking-dots">
+          <span className="dot" />
+          <span className="dot" />
+          <span className="dot" />
+          <span className="dot" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function ChatApp() {
   const store = useAppStore()
   const { currentUser, chatRooms, setChatRooms, activeRoomId, setActiveRoomId,
@@ -161,6 +202,11 @@ export function ChatApp() {
   const [deleteAccountConfirm, setDeleteAccountConfirm] = useState('')
   const [deleteAccountError, setDeleteAccountError] = useState('')
   const [deletingAccount, setDeletingAccount] = useState(false)
+  // AI Assistant state
+  const [aiThinking, setAiThinking] = useState(false)
+  const [aiRoomId, setAiRoomId] = useState<string | null>(null)
+  const [aiCreatingRoom, setAiCreatingRoom] = useState(false)
+  const handleSendToAIRef = useRef<(msg: string) => void>(() => {})
 
   const messageEndRef = useRef<HTMLDivElement>(null)
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -260,16 +306,22 @@ export function ChatApp() {
   // ---- HANDLERS ----
   const handleSend = useCallback(async () => {
     if (!messageInput.trim() || !activeRoomId || !currentUser || sendingMessage) return
+    const msgContent = messageInput.trim()
+    const isAIRoom = activeRoom?.type === 'direct' && activeRoom?.participants.includes(AI_UID)
     setSendingMessage(true)
     setShowSendParticles(true)
     setTimeout(() => setShowSendParticles(false), 600)
     try {
-      await sendMessage(activeRoomId, messageInput.trim(), currentUser.uid, currentUser.displayName, currentUser.avatar, currentUser.avatarColor, 'text', replyingTo?.id || null, replyingTo?.content || null, replyingTo?.senderName || null)
+      await sendMessage(activeRoomId, msgContent, currentUser.uid, currentUser.displayName, currentUser.avatar, currentUser.avatarColor, 'text', replyingTo?.id || null, replyingTo?.content || null, replyingTo?.senderName || null)
       setMessageInput('')
       setTyping(activeRoomId, currentUser.uid, currentUser.displayName, false)
       setReplyingTo(null)
+      // If this is the AI room, trigger AI response
+      if (isAIRoom) {
+        handleSendToAIRef.current(msgContent)
+      }
     } catch (err) { console.error(err) } finally { setSendingMessage(false) }
-  }, [messageInput, activeRoomId, currentUser, sendingMessage, replyingTo])
+  }, [messageInput, activeRoomId, currentUser, sendingMessage, replyingTo, activeRoom])
 
   const handleTyping = useCallback((v: string) => {
     setMessageInput(v)
@@ -546,6 +598,84 @@ export function ChatApp() {
   }
 
   // Reaction handler
+  // ---- AI ASSISTANT ----
+  const aiRoom = chatRooms.find(r => r.type === 'direct' && r.participants.includes(AI_UID))
+  const isActiveRoomAI = activeRoom?.type === 'direct' && activeRoom?.participants.includes(AI_UID)
+
+  const handleOpenAI = useCallback(async () => {
+    if (!currentUser) return
+    if (aiCreatingRoom) return
+    // If AI room already exists, just open it
+    if (aiRoom) {
+      setActiveRoomId(aiRoom.id)
+      setShowMobileChat(true)
+      return
+    }
+    // Create AI chat room
+    setAiCreatingRoom(true)
+    try {
+      const roomId = await createAIChatRoom(currentUser.uid)
+      setAiRoomId(roomId)
+      setActiveRoomId(roomId)
+      setShowMobileChat(true)
+    } catch (err) {
+      console.error('Failed to create AI chat room:', err)
+      showToast('Failed to start AI chat. Please try again.')
+    } finally {
+      setAiCreatingRoom(false)
+    }
+  }, [currentUser, aiRoom, aiCreatingRoom])
+
+  const handleSendToAI = useCallback(async (messageContent: string) => {
+    if (!activeRoomId || !currentUser || aiThinking) return
+    setAiThinking(true)
+    try {
+      // Build conversation history from current messages
+      const roomMessages = messages[activeRoomId] || []
+      const conversationHistory = roomMessages
+        .filter(m => m.type !== 'system' && !m.deletedForEveryone && !m.deletedFor.includes(currentUser.uid))
+        .slice(-20)
+        .map(m => ({
+          role: m.senderId === AI_UID ? 'assistant' : 'user',
+          content: m.content,
+        }))
+
+      // Add the new user message
+      conversationHistory.push({ role: 'user', content: messageContent })
+
+      // Call the AI API
+      const basePath = typeof window !== 'undefined' && window.location.pathname.includes('/furtherchat') ? '/furtherchat' : ''
+      const response = await fetch(`${basePath}/api/ai-chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: conversationHistory }),
+      })
+
+      if (!response.ok) {
+        throw new Error('AI response failed')
+      }
+
+      const data = await response.json()
+      if (data.reply) {
+        // Send AI response to Firestore
+        await sendAIMessage(activeRoomId, data.reply)
+      } else {
+        throw new Error('No reply from AI')
+      }
+    } catch (err) {
+      console.error('AI Chat Error:', err)
+      // Send error message as AI response
+      await sendAIMessage(activeRoomId, "I'm having trouble connecting right now. Please try again in a moment! ")
+    } finally {
+      setAiThinking(false)
+    }
+  }, [activeRoomId, currentUser, aiThinking, messages])
+
+  // Keep ref in sync
+  useEffect(() => {
+    handleSendToAIRef.current = handleSendToAI
+  }, [handleSendToAI])
+
   const REACTION_EMOJIS = ['❤️', '👍', '😂', '😮', '😢', '🎉']
 
   const handleAddReaction = useCallback((msgId: string, emoji: string) => {
@@ -683,9 +813,10 @@ export function ChatApp() {
   }, [])
 
   const otherUidInActiveRoom = activeRoom?.type === 'direct' ? activeRoom.participants.find(p => p !== currentUser?.uid) : null
-  const otherIsOnline = otherUidInActiveRoom ? !!onlineUsers[otherUidInActiveRoom]?.online : false
-  const otherLastSeen = otherUidInActiveRoom ? onlineUsers[otherUidInActiveRoom]?.lastSeen || null : null
-  const isOtherBlocked = otherUidInActiveRoom ? blockedUsers.includes(otherUidInActiveRoom) : false
+  const isOtherAI = otherUidInActiveRoom === AI_UID
+  const otherIsOnline = isOtherAI ? true : (otherUidInActiveRoom ? !!onlineUsers[otherUidInActiveRoom]?.online : false)
+  const otherLastSeen = isOtherAI ? null : (otherUidInActiveRoom ? onlineUsers[otherUidInActiveRoom]?.lastSeen || null : null)
+  const isOtherBlocked = !isOtherAI && otherUidInActiveRoom ? blockedUsers.includes(otherUidInActiveRoom) : false
 
   const getWallpaperClass = () => {
     if (chatWallpaper === 'none') return isDark ? 'chat-wallpaper-dark' : 'chat-wallpaper-light'
@@ -755,9 +886,32 @@ export function ChatApp() {
           {/* CHATS TAB */}
           {sidebarTab === 'chats' && (() => {
             const starredRooms = filteredRooms.filter(r => r.type === 'direct' && starredUsers.includes(r.participants.find(p => p !== currentUser?.uid) || ''))
-            const regularRooms = filteredRooms.filter(r => !(r.type === 'direct' && starredUsers.includes(r.participants.find(p => p !== currentUser?.uid) || '')))
-            return filteredRooms.length === 0 ? (
+            const regularRooms = filteredRooms.filter(r => !(r.type === 'direct' && starredUsers.includes(r.participants.find(p => p !== currentUser?.uid) || '')) && !r.participants.includes(AI_UID))
+            const existingAIRoom = chatRooms.find(r => r.type === 'direct' && r.participants.includes(AI_UID) && !r.deletedFor?.includes(currentUser?.uid || ''))
+            return filteredRooms.length === 0 && !existingAIRoom ? (
               <div className="flex flex-col items-center justify-center py-20 px-4 animate-fade-in">
+                {/* AI Assistant Entry - Always show */}
+                <div className="w-full mb-4">
+                  <button
+                    onClick={handleOpenAI}
+                    disabled={aiCreatingRoom}
+                    className={`w-full flex items-center gap-3 px-4 py-3 ai-sidebar-entry transition-all duration-200 hover:scale-[1.01] btn-press ${isActiveRoomAI ? (isDark ? 'bg-white/8' : 'bg-slate-100') : ''}`}
+                  >
+                    <div className="relative shrink-0">
+                      <AIAvatar size={48} />
+                    </div>
+                    <div className="flex-1 min-w-0 text-left">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-[14px] text-violet-400">FurtherAI</h3>
+                        <span className="ai-badge">AI</span>
+                      </div>
+                      <p className="text-[12px] text-slate-400">Your AI assistant - ask me anything!</p>
+                    </div>
+                    {aiCreatingRoom && (
+                      <div className="w-4 h-4 border-2 border-violet-400/30 border-t-violet-400 rounded-full animate-spin" />
+                    )}
+                  </button>
+                </div>
                 <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-4 shadow-xl ${tp.glow}`} style={{ background: 'linear-gradient(135deg, #10B981, #0EA5E9)' }}>
                   <svg className="w-10 h-10" viewBox="0 0 100 100" fill="none">
                     <defs>
@@ -780,6 +934,44 @@ export function ChatApp() {
                 </Button>
               </div>
             ) : (<>
+              {/* AI Assistant Entry - Always at top */}
+              <div className="pb-1">
+                <button
+                  onClick={handleOpenAI}
+                  disabled={aiCreatingRoom}
+                  className={`group w-full flex items-center gap-3 px-4 py-3 ai-sidebar-entry transition-all duration-200 hover:scale-[1.01] btn-press ${isActiveRoomAI ? (isDark ? 'bg-white/8' : 'bg-slate-100') : ''}`}
+                >
+                  <div className="relative shrink-0">
+                    <AIAvatar size={48} />
+                    <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full border-2 ${isDark ? 'border-[#0c1220]' : 'border-white'} shadow-lg shadow-violet-500/40 online-dot-breathe`}>
+                      <span className="absolute inset-0 rounded-full bg-violet-400 animate-ping opacity-50" />
+                    </span>
+                  </div>
+                  <div className={`flex-1 min-w-0 text-left border-b ${c.border} pb-3`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <h3 className="font-semibold text-[14px] text-violet-400">FurtherAI</h3>
+                        <span className="ai-badge">AI</span>
+                      </div>
+                      <div className="flex items-center shrink-0 gap-1">
+                        {aiCreatingRoom && (
+                          <div className="w-3.5 h-3.5 border-2 border-violet-400/30 border-t-violet-400 rounded-full animate-spin" />
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      {existingAIRoom?.lastMessage ? (
+                        <p className="text-[12px] text-slate-400 truncate">
+                          {existingAIRoom.lastMessage.type === 'deleted' ? 'Message deleted' : existingAIRoom.lastMessage.content}
+                        </p>
+                      ) : (
+                        <p className="text-[12px] text-slate-500">Your AI assistant - ask me anything!</p>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              </div>
+
               {/* Starred Users Section */}
               {starredRooms.length > 0 && (
                 <div>
@@ -1385,16 +1577,33 @@ export function ChatApp() {
                   <ArrowLeft className="h-5 w-5" />
                 </button>
                 <div className="relative">
-                  <Avatar avatar={activeRoom.avatar} name={activeRoom.name || 'Chat'} avatarColor={activeRoom.avatarColor || getAvatarColor(activeRoom.id)} size={40} />
-                  <OnlineDot online={otherIsOnline} size="md" isDark={isDark} />
+                  {isActiveRoomAI ? (
+                    <AIAvatar size={40} />
+                  ) : (
+                    <Avatar avatar={activeRoom.avatar} name={activeRoom.name || 'Chat'} avatarColor={activeRoom.avatarColor || getAvatarColor(activeRoom.id)} size={40} />
+                  )}
+                  {isActiveRoomAI ? (
+                    <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full border-2 border-[#0c1220] shadow-lg shadow-violet-500/40 online-dot-breathe">
+                      <span className="absolute inset-0 rounded-full bg-violet-400 animate-ping opacity-50" />
+                    </span>
+                  ) : (
+                    <OnlineDot online={otherIsOnline} size="md" isDark={isDark} />
+                  )}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <h3 className={`font-semibold text-sm ${c.text}`}>{activeRoom.name || 'Chat'}</h3>
+                    <h3 className={`font-semibold text-sm ${isActiveRoomAI ? 'text-violet-400' : c.text}`}>{isActiveRoomAI ? 'FurtherAI' : activeRoom.name || 'Chat'}</h3>
+                    {isActiveRoomAI && <span className="ai-badge">AI</span>}
                     {isOtherBlocked && <Ban className="h-3.5 w-3.5 text-red-400" />}
                     {otherUidInActiveRoom && starredUsers.includes(otherUidInActiveRoom) && <Star className="h-3.5 w-3.5 text-amber-400 fill-amber-400" />}
                   </div>
-                  {activeRoom.type === 'direct' && (
+                  {isActiveRoomAI ? (
+                    <p className="text-[11px] text-violet-400">
+                      {aiThinking ? (
+                        <>Thinking<span className="typing-wave-dot inline-block w-1 h-1 rounded-full bg-violet-400 ml-1" style={{ animation: 'typing-wave 1.2s ease-in-out infinite' }} /><span className="typing-wave-dot inline-block w-1 h-1 rounded-full bg-violet-400" style={{ animation: 'typing-wave 1.2s ease-in-out infinite 0.15s' }} /><span className="typing-wave-dot inline-block w-1 h-1 rounded-full bg-violet-400" style={{ animation: 'typing-wave 1.2s ease-in-out infinite 0.3s' }} /></>
+                      ) : 'Always online'}
+                    </p>
+                  ) : activeRoom.type === 'direct' && (
                     <p className={`text-[11px] ${otherIsOnline ? 'text-emerald-400' : c.muted}`}>
                       {isOtherBlocked ? 'Blocked' :
                         activeTyping.length > 0 ? (
@@ -1413,7 +1622,7 @@ export function ChatApp() {
             {/* Chat Action Menu */}
             {chatActionMenu && (
               <div data-chat-menu className={`absolute top-14 right-4 z-50 ${isDark ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'} border rounded-xl shadow-xl py-1 min-w-[200px] animate-scale-in`}>
-                {otherUidInActiveRoom && (
+                {otherUidInActiveRoom && !isActiveRoomAI && (
                   starredUsers.includes(otherUidInActiveRoom) ? (
                     <button onClick={() => { handleUnstarUser(otherUidInActiveRoom); setChatActionMenu(false) }}
                       className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} text-amber-400 transition-colors flex items-center gap-2`}>
@@ -1434,7 +1643,7 @@ export function ChatApp() {
                   className="w-full text-left px-4 py-2.5 text-sm hover:bg-red-500/10 text-red-400 transition-colors flex items-center gap-2">
                   <Trash className="h-3.5 w-3.5" />Delete Chat
                 </button>
-                {otherUidInActiveRoom && (
+                {otherUidInActiveRoom && !isActiveRoomAI && (
                   isOtherBlocked ? (
                     <button onClick={() => { handleUnblockUser(otherUidInActiveRoom); setChatActionMenu(false) }}
                       className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} text-emerald-400 transition-colors flex items-center gap-2`}>
@@ -1446,6 +1655,12 @@ export function ChatApp() {
                       <Ban className="h-3.5 w-3.5" />Block User
                     </button>
                   )
+                )}
+                {isActiveRoomAI && (
+                  <div className={`px-4 py-2 text-[10px] ${c.muted} border-t ${c.border} mt-1 pt-2 flex items-center gap-1.5`}>
+                    <Bot className="w-3 h-3 text-violet-400" />
+                    Powered by FurtherAI
+                  </div>
                 )}
               </div>
             )}
@@ -1486,6 +1701,7 @@ export function ChatApp() {
                 .filter(m => chatSearchQuery && chatSearchQuery !== ' ' ? m.content.toLowerCase().includes(chatSearchQuery.toLowerCase()) : true)
                 .map((msg, idx, arr) => {
                 const isMine = msg.senderId === currentUser?.uid
+                const isAI = msg.senderId === AI_UID
                 const isDeleted = msg.deletedForEveryone || msg.type === 'deleted'
                 const isSystem = msg.type === 'system'
                 const showAvatar = !isMine && !isSystem && (idx === 0 || arr[idx - 1]?.senderId !== msg.senderId)
@@ -1561,7 +1777,7 @@ export function ChatApp() {
                       )}
                       {!isMine && (
                         <div className="w-7 shrink-0">
-                          {showAvatar && <Avatar avatar={msg.senderAvatar} name={msg.senderName} avatarColor={msg.senderAvatarColor} size={28} />}
+                          {showAvatar && (isAI ? <AIAvatar size={28} /> : <Avatar avatar={msg.senderAvatar} name={msg.senderName} avatarColor={msg.senderAvatarColor} size={28} />)}
                         </div>
                       )}
                       <div className={`group relative`}>
@@ -1581,18 +1797,23 @@ export function ChatApp() {
                             <span className="font-medium">{msg.replyToSender}</span>: {msg.replyToContent}
                           </div>
                         )}
-                        <div className={`px-3 py-2 rounded-2xl ${isDeleted ? 'italic' : ''} transition-all duration-200 hover:shadow-md btn-ripple`} style={isMine ? {
+                        <div className={`px-3 py-2 rounded-2xl ${isDeleted ? 'italic' : ''} ${isAI ? 'ai-msg-bubble ai-msg-animate' : ''} transition-all duration-200 hover:shadow-md btn-ripple`} style={isMine ? {
                           background: `linear-gradient(135deg, rgba(${tp.primaryRgb},0.22) 0%, rgba(${tp.primaryRgb},0.08) 100%)`,
                           border: `1px solid rgba(${tp.primaryRgb},0.18)`,
-                        } : isDark ? {
+                        } : isAI ? undefined : isDark ? {
                           background: 'rgba(255,255,255,0.05)',
                           border: '1px solid rgba(255,255,255,0.07)',
                         } : {
                           background: '#ffffff',
                           border: '1px solid #e2e8f0',
                         }}>
-                          {!isMine && showAvatar && activeRoom?.type === 'group' && (
+                          {!isMine && showAvatar && activeRoom?.type === 'group' && !isAI && (
                             <p className={`text-[10px] font-medium mb-0.5`} style={{ color: msg.senderAvatarColor || getAvatarColor(msg.senderId) }}>{msg.senderName}</p>
+                          )}
+                          {isAI && showAvatar && (
+                            <p className="text-[10px] font-medium mb-0.5 text-violet-400 flex items-center gap-1">
+                              <Sparkles className="w-2.5 h-2.5" />FurtherAI
+                            </p>
                           )}
                           {isDeleted ? (
                             <p className={`text-[13px] ${c.muted}`}>&#x1F6AB; This message was deleted</p>
@@ -1626,6 +1847,8 @@ export function ChatApp() {
                   </div>
                 )
               })}
+              {/* AI Thinking Indicator */}
+              {isActiveRoomAI && aiThinking && <AIThinkingIndicator />}
               <div ref={messageEndRef} />
             </div>
 
