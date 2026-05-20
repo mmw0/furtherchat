@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
   display: "swap",
 });
 
-const faviconSvg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='2' y='2' width='96' height='96' rx='20' fill='%2300C853'/><path d='M25 28h50c5.5 0 10 4.5 10 10v24c0 5.5-4.5 10-10 10H42l-10 12V72H25c-5.5 0-10-4.5-10-10V38c0-5.5 4.5-10 10-10z' fill='white'/></svg>`;
+const faviconSvg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2300C853'/><path d='M50 22C34.5 22 22 33 22 46.5c0 7.5 3.8 14.2 9.8 18.6L28 78l13.5-5.4c2.7 0.8 5.5 1.2 8.5 1.2 15.5 0 28-11 28-24.5S65.5 22 50 22z' fill='white'/></svg>`;
 
 export const metadata: Metadata = {
   title: "FurtherChat",

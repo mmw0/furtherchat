@@ -110,9 +110,9 @@ export function AuthForm() {
         <div className="bg-white/[0.07] backdrop-blur-2xl rounded-3xl border border-white/10 shadow-2xl shadow-black/40 overflow-hidden">
           {/* Header */}
           <div className="p-8 text-center">
-            <div className="w-[72px] h-[72px] rounded-[18px] bg-[#00C853] flex items-center justify-center mx-auto mb-5 shadow-xl shadow-emerald-500/25 hover:scale-105 transition-transform duration-300">
+            <div className="w-[72px] h-[72px] rounded-full bg-[#00C853] flex items-center justify-center mx-auto mb-5 shadow-xl shadow-emerald-500/25 hover:scale-105 transition-transform duration-300">
               <svg className="w-10 h-10" viewBox="0 0 100 100" fill="none">
-                <path d="M25 28h50c5.5 0 10 4.5 10 10v24c0 5.5-4.5 10-10 10H42l-10 12V72H25c-5.5 0-10-4.5-10-10V38c0-5.5 4.5-10 10-10z" fill="white"/>
+                <path d="M50 22C34.5 22 22 33 22 46.5c0 7.5 3.8 14.2 9.8 18.6L28 78l13.5-5.4c2.7 0.8 5.5 1.2 8.5 1.2 15.5 0 28-11 28-24.5S65.5 22 50 22z" fill="white"/>
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-white mb-1">
