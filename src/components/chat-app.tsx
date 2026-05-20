@@ -27,7 +27,7 @@ import {
   UserX, Clock, Bell, BellRing, Smile, Trash2,
   Palette, Moon, MoreVertical, Shield, ChevronRight,
   Camera, Sun, ImagePlus, Trash, Ban, Unlock,
-  Lock, Star, Copy, Wallpaper,
+  Lock, Star, Copy, Wallpaper, Volume2, VolumeX, Pin,
 } from 'lucide-react'
 
 const THEME_PRESETS: Record<ThemePreset, { primary: string; primaryRgb: string; gradient: string; glow: string; name: string; hex: string }> = {
@@ -83,12 +83,12 @@ function Avatar({ avatar, name, avatarColor, size = 40 }: { avatar: string | nul
   )
 }
 
-function TypingDots() {
+function TypingWaveDots() {
   return (
-    <span className="inline-flex items-center gap-0.5 ml-1">
-      <span className="w-1 h-1 bg-current rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-      <span className="w-1 h-1 bg-current rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-      <span className="w-1 h-1 bg-current rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+    <span className="inline-flex items-center gap-1 ml-1">
+      <span className="typing-wave-dot" />
+      <span className="typing-wave-dot" />
+      <span className="typing-wave-dot" />
     </span>
   )
 }
@@ -140,6 +140,16 @@ export function ChatApp() {
   const [toastMsg, setToastMsg] = useState<string>('')
   const [toastVisible, setToastVisible] = useState(false)
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // New state: Message Reactions
+  const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({})
+  const [showReactionBar, setShowReactionBar] = useState<string | null>(null)
+  // New state: Pin Chat
+  const [pinnedChats, setPinnedChats] = useState<string[]>([])
+  // New state: Notification Sound Toggle
+  const [notifSound, setNotifSound] = useState(true)
+  // New state: Send Particles
+  const [showSendParticles, setShowSendParticles] = useState(false)
 
   const messageEndRef = useRef<HTMLDivElement>(null)
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -240,6 +250,8 @@ export function ChatApp() {
   const handleSend = useCallback(async () => {
     if (!messageInput.trim() || !activeRoomId || !currentUser || sendingMessage) return
     setSendingMessage(true)
+    setShowSendParticles(true)
+    setTimeout(() => setShowSendParticles(false), 600)
     try {
       await sendMessage(activeRoomId, messageInput.trim(), currentUser.uid, currentUser.displayName, currentUser.avatar, currentUser.avatarColor, 'text', replyingTo?.id || null, replyingTo?.content || null, replyingTo?.senderName || null)
       setMessageInput('')
@@ -468,7 +480,18 @@ export function ChatApp() {
   const activeRoom = chatRooms.find(r => r.id === activeRoomId)
   const activeMessages = activeRoomId ? (messages[activeRoomId] || []) : []
   const activeTyping = activeRoomId ? (typingUsers[activeRoomId] || []) : []
-  const filteredRooms = useMemo(() => chatRooms.filter(room => !searchQuery || (room.name || '').toLowerCase().includes(searchQuery.toLowerCase())), [chatRooms, searchQuery])
+  const filteredRooms = useMemo(() => {
+    const filtered = chatRooms.filter(room => !searchQuery || (room.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
+    // Sort: pinned chats first (by lastMessage time), then regular chats
+    return filtered.sort((a, b) => {
+      const aPinned = pinnedChats.includes(a.id) ? 0 : 1
+      const bPinned = pinnedChats.includes(b.id) ? 0 : 1
+      if (aPinned !== bPinned) return aPinned - bPinned
+      const aTime = a.lastMessage?.createdAt || 0
+      const bTime = b.lastMessage?.createdAt || 0
+      return bTime - aTime
+    })
+  }, [chatRooms, searchQuery, pinnedChats])
 
   const starredUserDetails = useMemo(() => {
     return starredUsers
@@ -495,6 +518,49 @@ export function ChatApp() {
     return `last seen ${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} at ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
   }
 
+  // Relative time helper for "last seen X ago"
+  const getRelativeTime = (timestamp: number): string => {
+    const now = Date.now()
+    const diff = now - timestamp
+    const seconds = Math.floor(diff / 1000)
+    const minutes = Math.floor(seconds / 60)
+    const hours = Math.floor(minutes / 60)
+    const days = Math.floor(hours / 24)
+
+    if (seconds < 60) return 'just now'
+    if (minutes < 60) return `${minutes}m ago`
+    if (hours < 24) return `${hours}h ago`
+    if (days < 7) return `${days}d ago`
+    return new Date(timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })
+  }
+
+  // Reaction handler
+  const REACTION_EMOJIS = ['❤️', '👍', '😂', '😮', '😢', '🎉']
+
+  const handleAddReaction = useCallback((msgId: string, emoji: string) => {
+    setMessageReactions(prev => {
+      const current = prev[msgId] || []
+      // Toggle: if already reacted with this emoji, remove it; otherwise add it
+      if (current.includes(emoji)) {
+        const filtered = current.filter(e => e !== emoji)
+        return { ...prev, [msgId]: filtered.length > 0 ? filtered : undefined as any }
+      }
+      return { ...prev, [msgId]: [...current, emoji] }
+    })
+    setShowReactionBar(null)
+  }, [])
+
+  // Pin/Unpin chat handlers
+  const togglePinChat = useCallback((roomId: string) => {
+    setPinnedChats(prev => {
+      if (prev.includes(roomId)) {
+        return prev.filter(id => id !== roomId)
+      }
+      return [...prev, roomId]
+    })
+    setChatMenuOpen(null)
+  }, [])
+
   // ---- COLORS ----
   const c = isDark ? {
     bg: 'bg-[#080c16]', sidebar: 'bg-[#0c1220]', card: 'bg-white/[0.04]',
@@ -517,6 +583,68 @@ export function ChatApp() {
       if (saved) setChatWallpaper(saved)
     }
   }, [])
+
+  // Load pinned chats from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('pinnedChats')
+      if (saved) {
+        try { setPinnedChats(JSON.parse(saved)) } catch {}
+      }
+    }
+  }, [])
+
+  // Save pinned chats to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('pinnedChats', JSON.stringify(pinnedChats))
+    }
+  }, [pinnedChats])
+
+  // Load notif sound from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('notifSound')
+      if (saved !== null) setNotifSound(saved === 'true')
+    }
+  }, [])
+
+  // Save notif sound to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('notifSound', String(notifSound))
+    }
+  }, [notifSound])
+
+  // Load message reactions from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('messageReactions')
+      if (saved) {
+        try { setMessageReactions(JSON.parse(saved)) } catch {}
+      }
+    }
+  }, [])
+
+  // Save message reactions to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('messageReactions', JSON.stringify(messageReactions))
+    }
+  }, [messageReactions])
+
+  // Close reaction bar on click outside
+  useEffect(() => {
+    if (!showReactionBar) return
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('[data-reaction-bar]') && !target.closest('[data-reaction-trigger]')) {
+        setShowReactionBar(null)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showReactionBar])
 
   const WALLPAPERS = [
     { id: 'none', name: 'Default', preview: isDark ? '#080c16' : '#f8fafc' },
@@ -672,6 +800,7 @@ export function ChatApp() {
                           <button onClick={(e) => { e.stopPropagation(); otherUid && handleUnstarUser(otherUid) }} className="p-1 text-amber-400 hover:text-amber-300 transition-colors star-animate">
                             <Star className="h-3.5 w-3.5 fill-amber-400" />
                           </button>
+                          {pinnedChats.includes(room.id) && <span className="text-xs" title="Pinned">📌</span>}
                           <div className="relative" data-sidebar-chat-menu>
                             <button onClick={(e) => { e.stopPropagation(); setChatMenuOpen(chatMenuOpen === room.id ? null : room.id) }}
                               className={`p-1 rounded-full ${c.hover} ${c.muted} hover:text-white transition-all`}>
@@ -679,6 +808,10 @@ export function ChatApp() {
                             </button>
                             {chatMenuOpen === room.id && (
                               <div className={`absolute right-0 top-8 z-50 ${c.panelBg} border ${c.border} rounded-xl shadow-2xl py-1 min-w-[160px] animate-scale-in`}>
+                                <button onClick={(e) => { e.stopPropagation(); togglePinChat(room.id) }}
+                                  className={`w-full px-4 py-2 text-left text-sm ${c.text} ${c.hover} flex items-center gap-2 btn-press`}>
+                                  <Pin className="h-3.5 w-3.5" /> {pinnedChats.includes(room.id) ? 'Unpin' : 'Pin'}
+                                </button>
                                 <button onClick={(e) => { e.stopPropagation(); setClearDeleteConfirm({ roomId: room.id, action: 'clear' }); setChatMenuOpen(null) }}
                                   className={`w-full px-4 py-2 text-left text-sm ${c.text} ${c.hover} flex items-center gap-2 btn-press`}>
                                   <Trash2 className="h-3.5 w-3.5" /> Clear for me
@@ -704,10 +837,11 @@ export function ChatApp() {
                 const isOn = otherUid ? !!onlineUsers[otherUid]?.online : false
                 const isBlocked = otherUid ? blockedUsers.includes(otherUid) : false
                 const isStarred = otherUid ? starredUsers.includes(otherUid) : false
+                const isPinned = pinnedChats.includes(room.id)
                 const lastMsg = room.lastMessage
                 return (
                   <button key={room.id} onClick={() => { setActiveRoomId(room.id); setShowMobileChat(true) }}
-                    className={`group w-full flex items-center gap-3 px-4 py-3 transition-all duration-200 chat-item-hover ${isActive ? (isDark ? 'bg-white/8' : 'bg-slate-100') : c.hover} animate-slide-in`}
+                    className={`group w-full flex items-center gap-3 px-4 py-3 transition-all duration-200 chat-item-hover ${isActive ? (isDark ? 'bg-white/8' : 'bg-slate-100') : c.hover} ${isPinned ? 'pinned-chat-highlight' : ''} animate-slide-in`}
                     style={{ animationDelay: `${idx * 30}ms` }}>
                     <div className="relative shrink-0">
                       <Avatar avatar={room.avatar} name={room.name || 'Chat'} avatarColor={room.avatarColor || getAvatarColor(room.id)} size={48} />
@@ -725,9 +859,10 @@ export function ChatApp() {
                             const roomMsgs = messages[room.id] || []
                             const unreadCount = roomMsgs.filter(m => m.senderId !== currentUser?.uid && !m.readBy?.includes(currentUser?.uid || '') && m.type !== 'system').length
                             return unreadCount > 0 ? (
-                              <span className={`min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-gradient-to-r ${tp.gradient} text-white text-[9px] font-bold px-1 badge-animate`}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+                              <span className={`min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-gradient-to-r ${tp.gradient} text-white text-[9px] font-bold px-1 badge-animate animate-counter-pop`}>{unreadCount > 99 ? '99+' : unreadCount}</span>
                             ) : null
                           })()}
+                          {isPinned && <span className="text-xs" title="Pinned">📌</span>}
                           <span onClick={(e) => { e.stopPropagation(); isStarred ? handleUnstarUser(otherUid!) : otherUid && handleStarUser(otherUid) }}
                             className={`p-1 cursor-pointer transition-colors ${isStarred ? 'text-amber-400' : 'text-slate-500 hover:text-amber-400 opacity-0 group-hover:opacity-100'} star-animate`}>
                             <Star className={`h-3.5 w-3.5 ${isStarred ? 'fill-amber-400' : ''}`} />
@@ -739,6 +874,10 @@ export function ChatApp() {
                             </button>
                             {chatMenuOpen === room.id && (
                               <div className={`absolute right-0 top-8 z-50 ${c.panelBg} border ${c.border} rounded-xl shadow-2xl py-1 min-w-[160px] animate-scale-in`}>
+                                <button onClick={(e) => { e.stopPropagation(); togglePinChat(room.id) }}
+                                  className={`w-full px-4 py-2 text-left text-sm ${c.text} ${c.hover} flex items-center gap-2 btn-press`}>
+                                  <Pin className="h-3.5 w-3.5" /> {isPinned ? 'Unpin' : 'Pin'}
+                                </button>
                                 <button onClick={(e) => { e.stopPropagation(); setClearDeleteConfirm({ roomId: room.id, action: 'clear' }); setChatMenuOpen(null) }}
                                   className={`w-full px-4 py-2 text-left text-sm ${c.text} ${c.hover} flex items-center gap-2 btn-press`}>
                                   <Trash2 className="h-3.5 w-3.5" /> Clear for me
@@ -1155,6 +1294,26 @@ export function ChatApp() {
                   ))}
                 </div>
               </div>
+
+              {/* Notification Sound */}
+              <div>
+                <h3 className={`text-[11px] font-bold uppercase tracking-wider mb-2 ${c.muted}`}>Notifications</h3>
+                <button onClick={() => setNotifSound(!notifSound)}
+                  className={`w-full flex items-center gap-3 p-3 rounded-xl ${c.hover} transition-colors text-left`}>
+                  {notifSound ? (
+                    <Volume2 className={`h-4 w-4 text-emerald-400`} />
+                  ) : (
+                    <VolumeX className={`h-4 w-4 ${c.muted}`} />
+                  )}
+                  <div className="flex-1">
+                    <span className={`text-sm ${c.text}`}>{notifSound ? 'Sound On' : 'Sound Off'}</span>
+                    <p className={`text-[10px] ${c.sub}`}>{notifSound ? 'Notification sounds are enabled' : 'Notification sounds are muted'}</p>
+                  </div>
+                  <div className={`w-8 h-5 rounded-full relative transition-colors duration-200 ${notifSound ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                    <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${notifSound ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                  </div>
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -1208,8 +1367,8 @@ export function ChatApp() {
                     <p className={`text-[11px] ${otherIsOnline ? 'text-emerald-400' : c.muted}`}>
                       {isOtherBlocked ? 'Blocked' :
                         activeTyping.length > 0 ? (
-                        <>{activeTyping.join(', ')} typing<TypingDots /></>
-                      ) : otherIsOnline ? 'Online' : otherLastSeen ? formatLastSeen(otherLastSeen) : otherUidInActiveRoom ? 'Offline' : ''}
+                        <>{activeTyping.join(', ')} typing<TypingWaveDots /></>
+                      ) : otherIsOnline ? 'Online' : otherLastSeen ? `last seen ${getRelativeTime(otherLastSeen)}` : otherUidInActiveRoom ? 'Offline' : ''}
                     </p>
                   )}
                 </div>
@@ -1290,7 +1449,7 @@ export function ChatApp() {
             )}
 
             {/* Messages */}
-            <div className={`flex-1 overflow-y-auto px-4 py-3 ${getWallpaperClass()}`}>
+            <div className={`flex-1 overflow-y-auto px-4 py-3 ${getWallpaperClass()} room-transition`} key={activeRoomId}>
               {activeMessages
                 .filter(m => !m.deletedFor.includes(currentUser?.uid || ''))
                 .filter(m => chatSearchQuery && chatSearchQuery !== ' ' ? m.content.toLowerCase().includes(chatSearchQuery.toLowerCase()) : true)
@@ -1319,10 +1478,35 @@ export function ChatApp() {
                         </span>
                       </div>
                     )}
+                    {/* Unread Message Separator */}
+                    {(() => {
+                      const isUnread = !isMine && !msg.readBy?.includes(currentUser?.uid || '') && msg.type !== 'system'
+                      if (!isUnread) return null
+                      // Check if this is the first unread message
+                      const prevUnread = idx > 0 && !arr.slice(0, idx).some(m =>
+                        !m.deletedFor.includes(currentUser?.uid || '') &&
+                        m.senderId !== currentUser?.uid &&
+                        !m.readBy?.includes(currentUser?.uid || '') &&
+                        m.type !== 'system'
+                      )
+                      if (!prevUnread) return null
+                      const unreadCount = arr.filter(m =>
+                        !m.deletedFor.includes(currentUser?.uid || '') &&
+                        m.senderId !== currentUser?.uid &&
+                        !m.readBy?.includes(currentUser?.uid || '') &&
+                        m.type !== 'system'
+                      ).length
+                      return (
+                        <div className="unread-separator animate-elastic" key={`unread-${msg.id}`}>
+                          <span className="unread-separator-text">{unreadCount} unread message{unreadCount > 1 ? 's' : ''}</span>
+                        </div>
+                      )
+                    })()}
                   <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-1 ${showAvatar ? 'mt-3' : ''} msg-animate-in`}
                     style={{ animationDelay: `${Math.min(idx * 30, 300)}ms` }}
                     onContextMenu={(e) => { e.preventDefault(); setContextMenuMessage(msg) }}
                     onTouchStart={() => handleTouchStart(msg)} onTouchEnd={handleTouchEnd}
+                    onDoubleClick={() => { if (!isDeleted && !isSystem) setShowReactionBar(showReactionBar === msg.id ? null : msg.id) }}
                     onTouchMove={(e) => {
                       const touch = e.touches[0]
                       const startX = swipeStartXRef.current
@@ -1350,12 +1534,23 @@ export function ChatApp() {
                         </div>
                       )}
                       <div className={`group relative`}>
+                        {/* Reaction Bar */}
+                        {showReactionBar === msg.id && (
+                          <div data-reaction-bar className={`absolute -top-10 left-1/2 -translate-x-1/2 ${isDark ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'} border rounded-full shadow-xl px-2 py-1 flex items-center gap-0.5 z-20 reaction-bar-animate`}>
+                            {REACTION_EMOJIS.map(emoji => (
+                              <button key={emoji} data-reaction-trigger onClick={(e) => { e.stopPropagation(); handleAddReaction(msg.id, emoji) }}
+                                className="text-lg hover:scale-125 transition-transform p-0.5 btn-press">
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                         {msg.replyTo && (
                           <div className={`text-[10px] ${c.muted} px-3 pt-2 pb-1 ${isDark ? 'bg-white/5' : 'bg-black/5'} rounded-t-2xl border-b ${c.border}`}>
                             <span className="font-medium">{msg.replyToSender}</span>: {msg.replyToContent}
                           </div>
                         )}
-                        <div className={`px-3 py-2 rounded-2xl ${isDeleted ? 'italic' : ''} transition-all duration-200 hover:shadow-md`} style={isMine ? {
+                        <div className={`px-3 py-2 rounded-2xl ${isDeleted ? 'italic' : ''} transition-all duration-200 hover:shadow-md btn-ripple`} style={isMine ? {
                           background: `linear-gradient(135deg, rgba(${tp.primaryRgb},0.22) 0%, rgba(${tp.primaryRgb},0.08) 100%)`,
                           border: `1px solid rgba(${tp.primaryRgb},0.18)`,
                         } : isDark ? {
@@ -1378,6 +1573,22 @@ export function ChatApp() {
                             {isMine && <TickIndicator status={msg.status} color={msg.status === 'read' ? '#53bdeb' : (isDark ? '#8696a0' : '#8696a0')} />}
                           </div>
                         </div>
+                        {/* Reactions Display */}
+                        {messageReactions[msg.id] && messageReactions[msg.id].length > 0 && (() => {
+                          const reactions = messageReactions[msg.id]
+                          const counts: Record<string, number> = {}
+                          reactions.forEach(r => { counts[r] = (counts[r] || 0) + 1 })
+                          return (
+                            <div className={`flex flex-wrap gap-1 mt-1 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                              {Object.entries(counts).map(([emoji, count]) => (
+                                <span key={emoji} className={`inline-flex items-center gap-0.5 text-[11px] ${isDark ? 'bg-white/8' : 'bg-slate-100'} rounded-full px-1.5 py-0.5 reaction-badge-animate cursor-pointer hover:bg-white/15 transition-colors`}
+                                  onClick={() => handleAddReaction(msg.id, emoji)}>
+                                  {emoji}{count > 1 && <span className="text-[9px] text-slate-400">{count}</span>}
+                                </span>
+                              ))}
+                            </div>
+                          )
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -1414,10 +1625,20 @@ export function ChatApp() {
                   rows={1}
                   className={`flex-1 bg-transparent ${c.text} placeholder:text-slate-500 outline-none resize-none text-sm leading-5 max-h-24 py-1.5`}
                 />
-                <button onClick={handleSend} disabled={!messageInput.trim() || sendingMessage || isOtherBlocked}
-                  className={`p-2 rounded-xl bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow} disabled:opacity-30 transition-all duration-200 shrink-0 mb-0.5 active:scale-90 btn-press ${messageInput.trim() ? 'send-pulse' : ''}`}>
-                  {sendingMessage ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-4 w-4" />}
-                </button>
+                <div className="relative">
+                  <button onClick={handleSend} disabled={!messageInput.trim() || sendingMessage || isOtherBlocked}
+                    className={`p-2 rounded-xl bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow} disabled:opacity-30 transition-all duration-200 shrink-0 mb-0.5 active:scale-90 btn-press ${messageInput.trim() ? 'send-pulse' : ''}`}>
+                    {sendingMessage ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-4 w-4" />}
+                  </button>
+                  {showSendParticles && (
+                    <div className="send-particles">
+                      <div className="particle" />
+                      <div className="particle" />
+                      <div className="particle" />
+                      <div className="particle" />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </>
