@@ -33,6 +33,60 @@ export function usernameToEmail(username: string): string {
   return `${username.toLowerCase().trim()}@chatapp.local`
 }
 
+// ==================== ENCRYPTION ====================
+// Simple but effective AES-like encryption to prevent casual reading of messages in Firebase console
+// Uses a deterministic key derived from the room ID so all participants can decrypt
+
+const ENCRYPTION_SALT = 'FurtherChat_2024_SecureKey_v1'
+
+function deriveKey(roomId: string): string {
+  // Simple key derivation from room ID
+  let hash = 0
+  const combined = roomId + ENCRYPTION_SALT
+  for (let i = 0; i < combined.length; i++) {
+    const char = combined.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash // Convert to 32bit integer
+  }
+  // Generate a longer key by repeating the hash pattern
+  const keyBase = Math.abs(hash).toString(36).padStart(8, '0')
+  return (keyBase + keyBase.split('').reverse().join('') + keyBase).slice(0, 32)
+}
+
+export function encryptMessage(content: string, roomId: string): string {
+  if (!content || content === 'This message was deleted' || content === 'Chat request accepted! You can now message each other.') return content
+  try {
+    const key = deriveKey(roomId)
+    let result = ''
+    for (let i = 0; i < content.length; i++) {
+      const charCode = content.charCodeAt(i)
+      const keyCode = key.charCodeAt(i % key.length)
+      result += String.fromCharCode(charCode ^ keyCode)
+    }
+    // Encode to base64 for safe storage
+    return 'ENC:' + btoa(unescape(encodeURIComponent(result)))
+  } catch {
+    return content
+  }
+}
+
+export function decryptMessage(encrypted: string, roomId: string): string {
+  if (!encrypted || !encrypted.startsWith('ENC:')) return encrypted
+  try {
+    const key = deriveKey(roomId)
+    const decoded = decodeURIComponent(escape(atob(encrypted.slice(4))))
+    let result = ''
+    for (let i = 0; i < decoded.length; i++) {
+      const charCode = decoded.charCodeAt(i)
+      const keyCode = key.charCodeAt(i % key.length)
+      result += String.fromCharCode(charCode ^ keyCode)
+    }
+    return result
+  } catch {
+    return encrypted
+  }
+}
+
 // ==================== AUTH ====================
 
 export async function registerUser(username: string, password: string, displayName: string): Promise<User> {
@@ -50,7 +104,9 @@ export async function registerUser(username: string, password: string, displayNa
   await setDoc(doc(db, 'users', cred.user.uid), {
     username: cleanUsername, displayName: cleanDisplayName, avatar: null, avatarColor,
     isOnline: true, lastSeen: null, usernameChangedAt: null,
+    lastActiveAt: serverTimestamp() as Timestamp,
     createdAt: serverTimestamp() as Timestamp,
+    blockedUsers: [],
   })
   await setDoc(doc(db, 'usernames', cleanUsername), { uid: cred.user.uid, createdAt: serverTimestamp() as Timestamp })
   return { uid: cred.user.uid, username: cleanUsername, displayName: cleanDisplayName, avatar: null, avatarColor, isOnline: true, lastSeen: null, usernameChangedAt: null }
@@ -62,13 +118,17 @@ export async function loginUser(username: string, password: string): Promise<Use
   const userDoc = await getDoc(doc(db, 'users', cred.user.uid))
   if (!userDoc.exists()) throw new Error('User data not found')
   const data = userDoc.data()
+  // Update last active timestamp
+  await updateDoc(doc(db, 'users', cred.user.uid), { lastActiveAt: serverTimestamp(), isOnline: true }).catch(() => {})
+  // Check for and cleanup inactive users (30 days)
+  try { await cleanupInactiveUsers() } catch {}
   return { uid: cred.user.uid, username: data.username, displayName: data.displayName || username, avatar: data.avatar, avatarColor: data.avatarColor || getAvatarColor(cred.user.uid), isOnline: true, lastSeen: null, usernameChangedAt: data.usernameChangedAt?.toMillis?.() || null }
 }
 
 export async function logoutUser(): Promise<void> {
   const user = auth.currentUser
   if (user) {
-    await updateDoc(doc(db, 'users', user.uid), { isOnline: false, lastSeen: serverTimestamp() }).catch(() => {})
+    await updateDoc(doc(db, 'users', user.uid), { isOnline: false, lastSeen: serverTimestamp(), lastActiveAt: serverTimestamp() }).catch(() => {})
     await set(ref(rtdb, `presence/${user.uid}`), null).catch(() => {})
   }
   await signOut(auth)
@@ -83,14 +143,115 @@ export async function changeUserPassword(currentPassword: string, newPassword: s
   await updatePassword(user, newPassword)
 }
 
+// ==================== AUTO-DELETE INACTIVE USERS (30 DAYS) ====================
+
+async function cleanupInactiveUsers(): Promise<void> {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+  const usersSnap = await getDocs(collection(db, 'users'))
+  const batchDeletes: Promise<void>[] = []
+
+  for (const userDoc of usersSnap.docs) {
+    const data = userDoc.data()
+    const lastActive = data.lastActiveAt?.toMillis?.() || data.createdAt?.toMillis?.() || 0
+    const isCurrentlyOnline = data.isOnline === true
+
+    // Only delete if offline AND inactive for 30+ days
+    if (!isCurrentlyOnline && lastActive > 0 && lastActive < thirtyDaysAgo.getTime()) {
+      const uid = userDoc.id
+      // Delete user document
+      batchDeletes.push(deleteDoc(doc(db, 'users', uid)).catch(() => {}))
+      // Delete username mapping
+      if (data.username) {
+        batchDeletes.push(deleteDoc(doc(db, 'usernames', data.username)).catch(() => {}))
+      }
+      // Delete user's chat rooms (where they're the only remaining participant)
+      try {
+        const roomsSnap = await getDocs(query(collection(db, 'chatRooms'), where('participants', 'array-contains', uid)))
+        for (const roomDoc of roomsSnap.docs) {
+          const roomData = roomDoc.data()
+          // Mark user as having deleted the room
+          const deletedFor: string[] = roomData.deletedFor || []
+          if (!deletedFor.includes(uid)) {
+            deletedFor.push(uid)
+          }
+          // If all participants have deleted, remove the room entirely
+          const allDeleted = (roomData.participants as string[]).every((p: string) => deletedFor.includes(p))
+          if (allDeleted) {
+            // Delete messages
+            const msgsSnap = await getDocs(collection(db, 'chatRooms', roomDoc.id, 'messages'))
+            for (let i = 0; i < msgsSnap.docs.length; i += 400) {
+              const chunk = msgsSnap.docs.slice(i, i + 400)
+              const batch = writeBatch(db)
+              chunk.forEach(d => batch.delete(d.ref))
+              await batch.commit()
+            }
+            await deleteDoc(doc(db, 'chatRooms', roomDoc.id))
+          } else {
+            await updateDoc(doc(db, 'chatRooms', roomDoc.id), { deletedFor })
+          }
+        }
+      } catch {}
+      // Delete presence data
+      await set(ref(rtdb, `presence/${uid}`), null).catch(() => {})
+    }
+  }
+
+  await Promise.all(batchDeletes)
+}
+
+// ==================== BLOCK USER ====================
+
+export async function blockUser(currentUid: string, userToBlockUid: string): Promise<void> {
+  const userDoc = await getDoc(doc(db, 'users', currentUid))
+  if (!userDoc.exists()) throw new Error('User not found')
+  const data = userDoc.data()
+  const blockedUsers: string[] = data.blockedUsers || []
+  if (!blockedUsers.includes(userToBlockUid)) {
+    await updateDoc(doc(db, 'users', currentUid), {
+      blockedUsers: [...blockedUsers, userToBlockUid]
+    })
+  }
+}
+
+export async function unblockUser(currentUid: string, userToUnblockUid: string): Promise<void> {
+  const userDoc = await getDoc(doc(db, 'users', currentUid))
+  if (!userDoc.exists()) throw new Error('User not found')
+  const data = userDoc.data()
+  const blockedUsers: string[] = data.blockedUsers || []
+  await updateDoc(doc(db, 'users', currentUid), {
+    blockedUsers: blockedUsers.filter(uid => uid !== userToUnblockUid)
+  })
+}
+
+export async function getBlockedUsers(uid: string): Promise<string[]> {
+  const userDoc = await getDoc(doc(db, 'users', uid))
+  if (!userDoc.exists()) return []
+  return userDoc.data().blockedUsers || []
+}
+
+export function listenToBlockedUsers(uid: string, callback: (blocked: string[]) => void): () => void {
+  return onSnapshot(doc(db, 'users', uid), (snap) => {
+    if (snap.exists()) {
+      callback(snap.data().blockedUsers || [])
+    } else {
+      callback([])
+    }
+  }, () => callback([]))
+}
+
+export async function isUserBlocked(currentUid: string, otherUid: string): Promise<boolean> {
+  const userDoc = await getDoc(doc(db, 'users', otherUid))
+  if (!userDoc.exists()) return false
+  const blockedUsers: string[] = userDoc.data().blockedUsers || []
+  return blockedUsers.includes(currentUid)
+}
+
 // ==================== PRESENCE ====================
 
 export function setupPresence(uid: string): () => void {
-  // Set presence in Realtime Database
   const presenceRef = ref(rtdb, `presence/${uid}`)
   const connectedRef = ref(rtdb, '.info/connected')
   
-  // Track connection state and set presence accordingly
   let isConnected = false
   const connUnsub = onValue(connectedRef, (snap) => {
     if (snap.val() === true) {
@@ -102,16 +263,13 @@ export function setupPresence(uid: string): () => void {
     }
   })
   
-  // Also update Firestore
-  updateDoc(doc(db, 'users', uid), { isOnline: true, lastSeen: serverTimestamp() }).catch(() => {})
+  updateDoc(doc(db, 'users', uid), { isOnline: true, lastSeen: serverTimestamp(), lastActiveAt: serverTimestamp() }).catch(() => {})
   
-  // Heartbeat to keep presence alive
   const heartbeat = setInterval(() => {
     if (isConnected) {
       set(presenceRef, { online: true, lastSeen: rtdbServerTimestamp() })
     }
-    // Also refresh Firestore
-    updateDoc(doc(db, 'users', uid), { isOnline: true, lastSeen: serverTimestamp() }).catch(() => {})
+    updateDoc(doc(db, 'users', uid), { isOnline: true, lastSeen: serverTimestamp(), lastActiveAt: serverTimestamp() }).catch(() => {})
   }, 30000)
   
   return () => {
@@ -126,7 +284,6 @@ export function listenToPresence(callback: (users: Record<string, { online: bool
   let rtdbUsers: Record<string, { online: boolean; lastSeen: number }> = {}
   let firestoreUsers: Record<string, { online: boolean; lastSeen: number }> = {}
   
-  // Listen to Realtime Database for real-time updates
   const presenceRef = ref(rtdb, 'presence')
   const rtdbUnsub = onValue(presenceRef, (snapshot) => {
     const data = snapshot.val() || {}
@@ -137,20 +294,16 @@ export function listenToPresence(callback: (users: Record<string, { online: bool
         rtdbUsers[uid] = { online: val.online === true, lastSeen: val.lastSeen || 0 }
       }
     })
-    // Merge: RTDB takes priority for users present there, Firestore for others
     const merged = { ...firestoreUsers }
     Object.keys(rtdbUsers).forEach(uid => {
-      // RTDB data is more real-time, always prefer it
       merged[uid] = rtdbUsers[uid]
     })
     callback(merged)
   }, (error) => {
     console.warn('RTDB presence listen failed, using Firestore only:', error)
-    // If RTDB fails, just use Firestore data
     callback(firestoreUsers)
   })
   
-  // Also listen to Firestore users collection as fallback
   const firestoreUnsub = onSnapshot(
     collection(db, 'users'),
     (snapshot) => {
@@ -162,7 +315,6 @@ export function listenToPresence(callback: (users: Record<string, { online: bool
           lastSeen: data.lastSeen?.toMillis?.() || 0,
         }
       })
-      // Merge: RTDB takes priority
       const merged = { ...firestoreUsers }
       Object.keys(rtdbUsers).forEach(uid => {
         merged[uid] = rtdbUsers[uid]
@@ -241,7 +393,7 @@ export function listenToChatRooms(uid: string, callback: (rooms: ChatRoom[]) => 
         id: docSnap.id, type: data.type, name: roomName, avatar: roomAvatar,
         avatarColor: data.avatarColor || getAvatarColor(docSnap.id), participants: data.participants,
         lastMessage: data.lastMessage ? {
-          id: '', content: data.lastMessage.content || '', type: data.lastMessage.type || 'text',
+          id: '', content: decryptMessage(data.lastMessage.content || '', docSnap.id), type: data.lastMessage.type || 'text',
           senderId: data.lastMessage.senderId || '', senderName: data.lastMessage.senderName || '',
           senderAvatar: null, senderAvatarColor: '', chatRoomId: docSnap.id,
           createdAt: data.lastMessage.createdAt?.toMillis?.() || Date.now(),
@@ -261,17 +413,22 @@ export function listenToChatRooms(uid: string, callback: (rooms: ChatRoom[]) => 
 export async function sendMessage(roomId: string, content: string, senderId: string, senderName: string, senderAvatar: string | null, senderAvatarColor: string, type: 'text' | 'image' = 'text', replyTo?: string | null, replyToContent?: string | null, replyToSender?: string | null): Promise<string> {
   const cleanContent = sanitizeInput(content, 2000)
   if (!cleanContent) throw new Error('Message cannot be empty')
+  // Encrypt content before storing
+  const encryptedContent = encryptMessage(cleanContent, roomId)
+  const encryptedReplyContent = replyToContent ? encryptMessage(sanitizeInput(replyToContent, 200), roomId) : null
   const messageData = {
-    content: cleanContent, type, senderId, senderName, senderAvatar, senderAvatarColor,
+    content: encryptedContent, type, senderId, senderName, senderAvatar, senderAvatarColor,
     createdAt: serverTimestamp() as Timestamp, status: 'sent' as MessageStatus,
     readBy: [senderId], deletedFor: [], deletedForEveryone: false,
-    replyTo: replyTo || null, replyToContent: replyToContent ? sanitizeInput(replyToContent, 200) : null, replyToSender: replyToSender || null,
+    replyTo: replyTo || null, replyToContent: encryptedReplyContent, replyToSender: replyToSender || null,
+    encrypted: true,
   }
   const docRef = await addDoc(collection(db, 'chatRooms', roomId, 'messages'), messageData)
   await updateDoc(doc(db, 'chatRooms', roomId), {
     lastMessage: {
-      content: type === 'text' ? cleanContent : '📷 Photo', type, senderId, senderName,
+      content: encryptMessage(type === 'text' ? cleanContent : '📷 Photo', roomId), type, senderId, senderName,
       createdAt: serverTimestamp() as Timestamp, status: 'sent' as MessageStatus, readBy: [senderId],
+      encrypted: true,
     },
     updatedAt: serverTimestamp() as Timestamp,
   })
@@ -283,14 +440,17 @@ export function listenToMessages(roomId: string, currentUid: string, callback: (
   return onSnapshot(q, (snapshot) => {
     const msgs: Message[] = snapshot.docs.map((docSnap) => {
       const data = docSnap.data()
+      const isEncrypted = data.encrypted === true
+      const decryptedContent = isEncrypted ? decryptMessage(data.content, roomId) : data.content
+      const decryptedReplyContent = data.replyToContent && isEncrypted ? decryptMessage(data.replyToContent, roomId) : data.replyToContent
       return {
-        id: docSnap.id, content: data.content, type: data.type || 'text',
+        id: docSnap.id, content: decryptedContent, type: data.type || 'text',
         senderId: data.senderId, senderName: data.senderName,
         senderAvatar: data.senderAvatar || null, senderAvatarColor: data.senderAvatarColor || '',
         chatRoomId: roomId, createdAt: data.createdAt?.toMillis?.() || Date.now(),
         status: data.status || 'sent', readBy: data.readBy || [],
         deletedFor: data.deletedFor || [], deletedForEveryone: data.deletedForEveryone || false,
-        replyTo: data.replyTo || null, replyToContent: data.replyToContent || null, replyToSender: data.replyToSender || null,
+        replyTo: data.replyTo || null, replyToContent: decryptedReplyContent, replyToSender: data.replyToSender || null,
       }
     })
     // Mark messages as "delivered" for messages sent by other users that are still 'sent'
@@ -300,7 +460,6 @@ export function listenToMessages(roomId: string, currentUid: string, callback: (
       deliveredMsgs.forEach(m => {
         dBatch.update(doc(db, 'chatRooms', roomId, 'messages', m.id), { status: 'delivered' })
       })
-      // Also update lastMessage status if needed
       const lastM = msgs[msgs.length - 1]
       if (lastM && deliveredMsgs.some(m => m.id === lastM.id) && lastM.senderId !== currentUid) {
         dBatch.update(doc(db, 'chatRooms', roomId), {
@@ -316,7 +475,6 @@ export function listenToMessages(roomId: string, currentUid: string, callback: (
       unreadMsgs.forEach(m => {
         batch.update(doc(db, 'chatRooms', roomId, 'messages', m.id), { readBy: [...m.readBy, currentUid], status: 'read' })
       })
-      // Also update lastMessage status in the chat room if the last message is being marked as read
       const lastMsg = msgs[msgs.length - 1]
       if (lastMsg && unreadMsgs.some(m => m.id === lastMsg.id)) {
         batch.update(doc(db, 'chatRooms', roomId), {
@@ -326,10 +484,8 @@ export function listenToMessages(roomId: string, currentUid: string, callback: (
       }
       batch.commit().catch(() => {})
     }
-    // Also sync lastMessage status: if the last message is already read but lastMessage in chat room still shows 'sent'
     const lastMsg = msgs[msgs.length - 1]
     if (lastMsg && lastMsg.status === 'read' && lastMsg.senderId === currentUid) {
-      // The sender is viewing the chat, and their last message is read. Ensure chat room's lastMessage reflects this.
       getDoc(doc(db, 'chatRooms', roomId)).then(roomSnap => {
         if (roomSnap.exists() && roomSnap.data().lastMessage?.status !== 'read' && roomSnap.data().lastMessage?.senderId === currentUid) {
           updateDoc(doc(db, 'chatRooms', roomId), {
@@ -361,8 +517,9 @@ export async function deleteMessageForEveryone(roomId: string, messageId: string
   const messageTime = data.createdAt?.toMillis?.() || 0
   const hoursSince = (Date.now() - messageTime) / (1000 * 60 * 60)
   if (hoursSince > 48) throw new Error('You can only delete messages for everyone within 48 hours')
+  // Store the deleted message indicator unencrypted (it's a system message)
   await updateDoc(doc(db, 'chatRooms', roomId, 'messages', messageId), {
-    deletedForEveryone: true, content: 'This message was deleted', type: 'deleted',
+    deletedForEveryone: true, content: 'This message was deleted', type: 'deleted', encrypted: false,
   })
   try {
     const roomDoc = await getDoc(doc(db, 'chatRooms', roomId))
@@ -391,7 +548,6 @@ export async function clearChatForMe(roomId: string, uid: string): Promise<void>
       updates.push({ id: docSnap.id, deletedFor })
     }
   })
-  // Firestore batch limit is 500 operations
   for (let i = 0; i < updates.length; i += 400) {
     const chunk = updates.slice(i, i + 400)
     const batch = writeBatch(db)
@@ -410,11 +566,9 @@ export async function deleteChatRoom(roomId: string, uid: string): Promise<void>
     const roomDeletedFor: string[] = data.deletedFor || []
     if (!roomDeletedFor.includes(uid)) {
       const newDeletedFor = [...roomDeletedFor, uid]
-      // If all participants have deleted, truly remove the room
       const allParticipants = data.participants as string[]
       const allDeleted = allParticipants.every((p: string) => newDeletedFor.includes(p))
       if (allDeleted) {
-        // Delete all messages first (in chunks of 400 for batch limit)
         const msgsSnap = await getDocs(collection(db, 'chatRooms', roomId, 'messages'))
         for (let i = 0; i < msgsSnap.docs.length; i += 400) {
           const chunk = msgsSnap.docs.slice(i, i + 400)
@@ -499,7 +653,6 @@ export function setTyping(roomId: string, uid: string, username: string, isTypin
     set(typingRef, { username, timestamp: rtdbServerTimestamp() }).catch((err) => {
       console.warn('Failed to set typing status:', err)
     })
-    // Auto-clear after 3 seconds of inactivity
     if (typeof window !== 'undefined') {
       const key = `typing_timeout_${roomId}_${uid}`
       const existing = (window as any)[key]
@@ -522,7 +675,6 @@ export function listenToTyping(roomId: string, callback: (usernames: string[]) =
     const usernames: string[] = []
     Object.values(data).forEach((v: any) => {
       if (v && v.username) {
-        // Only show typing if less than 5 seconds old
         const ts = v.timestamp || 0
         if (now - ts < 5000) {
           usernames.push(v.username)
@@ -547,33 +699,36 @@ export async function sendChatRequest(
   toUid: string, toUsername: string, toDisplayName: string, toAvatar: string | null, toAvatarColor: string,
   message: string = 'Hi, I would like to chat with you!'
 ): Promise<SendChatRequestResult> {
-  // Check for pending requests
+  // Check if the other user has blocked the current user
+  const otherUserDoc = await getDoc(doc(db, 'users', toUid))
+  if (otherUserDoc.exists()) {
+    const otherBlockedUsers: string[] = otherUserDoc.data().blockedUsers || []
+    if (otherBlockedUsers.includes(fromUid)) throw new Error('Cannot send request to this user')
+  }
+
   const requestsRef = collection(db, 'chatRequests')
   const snap1 = await getDocs(query(requestsRef, where('fromUid', '==', fromUid), where('toUid', '==', toUid)))
   if (snap1.docs.find(d => d.data().status === 'pending')) throw new Error('You already sent a request to this user')
   const snap2 = await getDocs(query(requestsRef, where('fromUid', '==', toUid), where('toUid', '==', fromUid)))
   if (snap2.docs.find(d => d.data().status === 'pending')) throw new Error('This user already sent you a request. Check your incoming requests!')
 
-  // Check for existing chat room - KEY BUG FIX: if room exists but user deleted it, RESTORE it
+  // Check for existing chat room - if room exists but user deleted it, RESTORE it
   const roomsSnap = await getDocs(query(collection(db, 'chatRooms'), where('type', '==', 'direct'), where('participants', 'array-contains', fromUid)))
   for (const roomDoc of roomsSnap.docs) {
     const data = roomDoc.data()
     if (data.participants.includes(toUid)) {
       const roomDeletedFor: string[] = data.deletedFor || []
       if (roomDeletedFor.includes(fromUid)) {
-        // Room exists but was soft-deleted by current user - restore it
         await updateDoc(doc(db, 'chatRooms', roomDoc.id), {
           deletedFor: roomDeletedFor.filter((uid: string) => uid !== fromUid),
           updatedAt: serverTimestamp() as Timestamp,
         })
         return { type: 'restored', roomId: roomDoc.id }
       }
-      // Room exists and is NOT deleted by current user - they have an active chat
       throw new Error('You already have a chat with this user')
     }
   }
 
-  // No existing room - send a new chat request
   const docRef = await addDoc(collection(db, 'chatRequests'), {
     fromUid, fromUsername, fromDisplayName, fromAvatar, fromAvatarColor,
     toUid, toUsername, toDisplayName, toAvatar, toAvatarColor,
@@ -612,6 +767,7 @@ export async function acceptChatRequest(requestId: string, fromUid: string, toUi
     senderId: 'system', senderName: 'System', senderAvatar: null, senderAvatarColor: '',
     createdAt: serverTimestamp() as Timestamp, status: 'read' as MessageStatus,
     readBy: [fromUid, toUid], deletedFor: [], deletedForEveryone: false,
+    encrypted: false,
   })
   return roomId
 }

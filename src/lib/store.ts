@@ -131,6 +131,8 @@ interface AppState {
   setShowPasswordChange: (show: boolean) => void
   showAvatarPicker: boolean
   setShowAvatarPicker: (show: boolean) => void
+  blockedUsers: string[]
+  setBlockedUsers: (blocked: string[]) => void
 }
 
 const AVATAR_COLORS = [
@@ -259,4 +261,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowPasswordChange: (show) => set({ showPasswordChange: show }),
   showAvatarPicker: false,
   setShowAvatarPicker: (show) => set({ showAvatarPicker: show }),
+  blockedUsers: [],
+  setBlockedUsers: (blocked) => set({ blockedUsers: blocked }),
 }))

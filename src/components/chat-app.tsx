@@ -12,6 +12,7 @@ import {
   acceptChatRequest, rejectChatRequest, cancelChatRequest,
   deleteMessageForMe, deleteMessageForEveryone,
   clearChatForMe, deleteChatRoom,
+  blockUser, unblockUser, listenToBlockedUsers,
 } from '@/lib/firebase-service'
 import type { Message, ThemePreset } from '@/lib/store'
 import { EmojiPicker } from '@/components/emoji-picker'
@@ -24,7 +25,8 @@ import {
   Hash, Edit3, Check, X, UserPlus, UserCheck,
   UserX, Clock, Bell, BellRing, Smile, Trash2,
   Palette, Moon, MoreVertical, Shield, ChevronRight,
-  Camera, Sun, ImagePlus, Trash,
+  Camera, Sun, ImagePlus, Trash, Ban, Unlock,
+  Lock, AlertTriangle,
 } from 'lucide-react'
 
 const THEME_PRESETS: Record<ThemePreset, { primary: string; primaryRgb: string; gradient: string; glow: string; name: string; hex: string }> = {
@@ -56,13 +58,17 @@ function OnlineDot({ online, size = 'sm', isDark = true }: { online: boolean; si
 function Avatar({ avatar, name, avatarColor, size = 40 }: { avatar: string | null; name: string; avatarColor: string; size?: number }) {
   const fontSize = Math.max(size * 0.45, 12)
   if (avatar?.startsWith('data:image')) {
-    return <img src={avatar} alt={name} className="rounded-full object-cover" style={{ width: size, height: size }} />
+    return (
+      <div className="rounded-full overflow-hidden" style={{ width: size, height: size }}>
+        <img src={avatar} alt={name} className="w-full h-full object-cover" />
+      </div>
+    )
   }
   if (avatar?.startsWith('avatar_')) {
     const av = BUILT_IN_AVATARS.find(a => a.id === avatar)
     if (av) {
       return (
-        <div className="rounded-full flex items-center justify-center" style={{ width: size, height: size, background: av.bg }}>
+        <div className="rounded-full overflow-hidden flex items-center justify-center" style={{ width: size, height: size, background: av.bg }}>
           <span style={{ fontSize }}>{av.emoji}</span>
         </div>
       )
@@ -70,7 +76,7 @@ function Avatar({ avatar, name, avatarColor, size = 40 }: { avatar: string | nul
   }
   const initials = getInitials(name)
   return (
-    <div className="rounded-full flex items-center justify-center font-bold text-white" style={{ width: size, height: size, background: avatarColor, fontSize: fontSize * 0.85 }}>
+    <div className="rounded-full overflow-hidden flex items-center justify-center font-bold text-white shrink-0" style={{ width: size, height: size, background: avatarColor, fontSize: fontSize * 0.85 }}>
       {initials}
     </div>
   )
@@ -97,7 +103,8 @@ export function ChatApp() {
     contextMenuMessage, setContextMenuMessage, chatSearchQuery, setChatSearchQuery,
     deleteConfirm, setDeleteConfirm, chatActionMenu, setChatActionMenu,
     clearDeleteConfirm, setClearDeleteConfirm, showPasswordChange, setShowPasswordChange,
-    showAvatarPicker, setShowAvatarPicker, logout } = store
+    showAvatarPicker, setShowAvatarPicker, logout,
+    blockedUsers, setBlockedUsers } = store
 
   const [messageInput, setMessageInput] = useState('')
   const [showNewGroup, setShowNewGroup] = useState(false)
@@ -123,6 +130,7 @@ export function ChatApp() {
   const [passwordError, setPasswordError] = useState('')
   const [passwordSuccess, setPasswordSuccess] = useState(false)
   const [changingPassword, setChangingPassword] = useState(false)
+  const [blockingUser, setBlockingUser] = useState<string | null>(null)
 
   const messageEndRef = useRef<HTMLDivElement>(null)
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -131,6 +139,8 @@ export function ChatApp() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const emojiBtnRef = useRef<HTMLButtonElement>(null)
   const userSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const chatSearchRef = useRef<HTMLInputElement>(null)
   const [emojiAnchorRect, setEmojiAnchorRect] = useState<DOMRect | null>(null)
 
   const preset = theme.preset
@@ -148,8 +158,9 @@ export function ChatApp() {
     const u2 = listenToChatRooms(currentUser.uid, (rooms) => setChatRooms(rooms))
     const u3 = listenToSentRequests(currentUser.uid, setSentRequests)
     const u4 = listenToReceivedRequests(currentUser.uid, setReceivedRequests)
+    const u5 = listenToBlockedUsers(currentUser.uid, setBlockedUsers)
     getAllUsers(currentUser.uid).then(setAllUsers)
-    listenersRef.current = [cleanup, u1, u2, u3, u4]
+    listenersRef.current = [cleanup, u1, u2, u3, u4, u5]
     return () => { listenersRef.current.forEach(fn => fn()) }
   }, [currentUser?.uid])
 
@@ -167,6 +178,7 @@ export function ChatApp() {
     }
   }, [messages[activeRoomId || '']?.length])
 
+  // Close chat action menu on outside click
   useEffect(() => {
     if (!chatActionMenu) return
     const handler = (e: MouseEvent) => {
@@ -176,6 +188,32 @@ export function ChatApp() {
     document.addEventListener('click', handler)
     return () => document.removeEventListener('click', handler)
   }, [chatActionMenu])
+
+  // Close sidebar search on outside click
+  useEffect(() => {
+    if (!searchQuery) return
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('[data-sidebar-search]')) {
+        setSearchQuery('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [searchQuery])
+
+  // Close chat search on outside click
+  useEffect(() => {
+    if (!chatSearchQuery || chatSearchQuery === ' ') return
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('[data-chat-search]')) {
+        setChatSearchQuery('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [chatSearchQuery])
 
   // ---- HANDLERS ----
   const handleSend = useCallback(async () => {
@@ -200,6 +238,12 @@ export function ChatApp() {
 
   const handleSendRequest = useCallback(async (toUser: any) => {
     if (!currentUser) return
+    // Check if user is blocked
+    if (blockedUsers.includes(toUser.uid)) {
+      setRequestError('You have blocked this user. Unblock them first.')
+      setTimeout(() => setRequestError(''), 3000)
+      return
+    }
     setSendingRequest(toUser.uid)
     setRequestError(''); setRequestSuccess('')
     try {
@@ -216,7 +260,7 @@ export function ChatApp() {
     } catch (err: any) {
       setRequestError(err.message); setTimeout(() => setRequestError(''), 5000)
     } finally { setSendingRequest(null) }
-  }, [currentUser])
+  }, [currentUser, blockedUsers])
 
   const handleAccept = useCallback(async (reqId: string, fromUid: string) => {
     if (!currentUser) return
@@ -283,6 +327,21 @@ export function ChatApp() {
     } catch (err) { console.error(err) } finally { setClearingChat(false) }
   }, [currentUser])
 
+  const handleBlockUser = useCallback(async (uid: string) => {
+    if (!currentUser || blockingUser) return
+    setBlockingUser(uid)
+    try {
+      await blockUser(currentUser.uid, uid)
+    } catch (err) { console.error(err) } finally { setBlockingUser(null) }
+  }, [currentUser, blockingUser])
+
+  const handleUnblockUser = useCallback(async (uid: string) => {
+    if (!currentUser) return
+    try {
+      await unblockUser(currentUser.uid, uid)
+    } catch (err) { console.error(err) }
+  }, [currentUser])
+
   const handleChangeUsername = useCallback(async () => {
     if (!currentUser || !newUsername.trim()) return; setUsernameError('')
     try {
@@ -316,7 +375,6 @@ export function ChatApp() {
     const reader = new FileReader()
     reader.onload = async (ev) => {
       const dataUrl = ev.target?.result as string
-      // Compress if > 200KB
       let finalUrl = dataUrl
       if (dataUrl.length > 200 * 1024) {
         const img = new Image()
@@ -356,6 +414,21 @@ export function ChatApp() {
     setShowAvatarPicker(false)
   }, [currentUser])
 
+  // Navigate to chat from request - handle deleted chats
+  const handleOpenChatFromRequest = useCallback((roomId: string) => {
+    // Check if the room still exists in our chat list
+    const roomExists = chatRooms.some(r => r.id === roomId)
+    if (roomExists) {
+      setActiveRoomId(roomId)
+      setShowMobileChat(true)
+      setSidebarTab('chats')
+    }
+    // If room doesn't exist in our list, it might still be loading - just navigate
+    setActiveRoomId(roomId)
+    setShowMobileChat(true)
+    setSidebarTab('chats')
+  }, [chatRooms])
+
   // ---- DERIVED STATE ----
   const activeRoom = chatRooms.find(r => r.id === activeRoomId)
   const activeMessages = activeRoomId ? (messages[activeRoomId] || []) : []
@@ -387,6 +460,7 @@ export function ChatApp() {
   const otherUidInActiveRoom = activeRoom?.type === 'direct' ? activeRoom.participants.find(p => p !== currentUser?.uid) : null
   const otherIsOnline = otherUidInActiveRoom ? !!onlineUsers[otherUidInActiveRoom]?.online : false
   const otherLastSeen = otherUidInActiveRoom ? onlineUsers[otherUidInActiveRoom]?.lastSeen || null : null
+  const isOtherBlocked = otherUidInActiveRoom ? blockedUsers.includes(otherUidInActiveRoom) : false
 
   return (
     <div className={`h-screen flex overflow-hidden ${c.bg} transition-colors duration-300`}>
@@ -403,7 +477,10 @@ export function ChatApp() {
             </div>
             <div className="min-w-0">
               <h2 className={`font-semibold text-sm truncate ${c.text}`}>{currentUser?.displayName}</h2>
-              <p className={`text-[11px] ${c.muted}`}>@{currentUser?.username}</p>
+              <div className="flex items-center gap-1">
+                <Lock className="w-2.5 h-2.5 text-emerald-500" />
+                <p className={`text-[11px] ${c.muted}`}>@{currentUser?.username}</p>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-0.5">
@@ -413,11 +490,16 @@ export function ChatApp() {
         </div>
 
         {/* Search */}
-        <div className="px-3 py-2">
+        <div className="px-3 py-2" data-sidebar-search>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-            <Input placeholder="Search or start new chat" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+            <Input ref={searchInputRef} placeholder="Search or start new chat" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
               className={`pl-10 h-9 rounded-xl text-sm ${c.input} ${c.text} placeholder:text-slate-500 border focus-visible:ring-1 focus-visible:ring-emerald-500/30`} />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-all">
+                <X className="h-3 w-3" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -428,9 +510,9 @@ export function ChatApp() {
               className={`flex-1 py-2.5 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all relative ${sidebarTab === tab ? c.text : c.muted}`}>
               <Icon className="h-3.5 w-3.5" />{label}
               {tab === 'requests' && pendingReceivedCount > 0 && (
-                <span className="absolute -top-0.5 right-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">{pendingReceivedCount}</span>
+                <span className="absolute -top-0.5 right-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 animate-bounce-subtle">{pendingReceivedCount}</span>
               )}
-              {sidebarTab === tab && <div className={`absolute bottom-0 left-[25%] right-[25%] h-[2.5px] rounded-full bg-gradient-to-r ${tp.gradient}`} />}
+              {sidebarTab === tab && <div className={`absolute bottom-0 left-[25%] right-[25%] h-[2.5px] rounded-full bg-gradient-to-r ${tp.gradient} transition-all duration-300`} />}
             </button>
           ))}
         </div>
@@ -439,24 +521,26 @@ export function ChatApp() {
         <div className="flex-1 overflow-y-auto">
           {/* CHATS TAB */}
           {sidebarTab === 'chats' && (filteredRooms.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 px-4">
+            <div className="flex flex-col items-center justify-center py-20 px-4 animate-fade-in">
               <div className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-4 shadow-xl ${tp.glow}`}>
                 <MessageCircle className="h-9 w-9 text-white" />
               </div>
               <p className={`text-sm ${c.muted} text-center mb-3`}>No conversations yet</p>
               <p className={`text-xs ${c.sub} text-center max-w-[200px] mb-4`}>Find users and send a chat request to start messaging</p>
-              <Button onClick={() => setSidebarTab('users')} className={`bg-gradient-to-r ${tp.gradient} text-white text-xs h-9 rounded-xl px-6 shadow-lg ${tp.glow}`}>
+              <Button onClick={() => setSidebarTab('users')} className={`bg-gradient-to-r ${tp.gradient} text-white text-xs h-9 rounded-xl px-6 shadow-lg ${tp.glow} btn-glow`}>
                 <UserPlus className="h-3.5 w-3.5 mr-1.5" />Find Users
               </Button>
             </div>
-          ) : filteredRooms.map((room) => {
+          ) : filteredRooms.map((room, idx) => {
             const isActive = activeRoomId === room.id
             const otherUid = room.type === 'direct' ? room.participants.find(p => p !== currentUser?.uid) : null
             const isOn = otherUid ? !!onlineUsers[otherUid]?.online : false
+            const isBlocked = otherUid ? blockedUsers.includes(otherUid) : false
             const lastMsg = room.lastMessage
             return (
               <button key={room.id} onClick={() => { setActiveRoomId(room.id); setShowMobileChat(true) }}
-                className={`w-full flex items-center gap-3 px-4 py-3 transition-all ${isActive ? (isDark ? 'bg-white/8' : 'bg-slate-100') : c.hover}`}>
+                className={`w-full flex items-center gap-3 px-4 py-3 transition-all duration-200 ${isActive ? (isDark ? 'bg-white/8' : 'bg-slate-100') : c.hover} animate-slide-in`}
+                style={{ animationDelay: `${idx * 30}ms` }}>
                 <div className="relative shrink-0">
                   <Avatar avatar={room.avatar} name={room.name || 'Chat'} avatarColor={room.avatarColor || getAvatarColor(room.id)} size={48} />
                   <OnlineDot online={isOn} isDark={isDark} />
@@ -465,6 +549,7 @@ export function ChatApp() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1 min-w-0">
                       <h3 className={`font-semibold text-[14px] truncate ${c.text}`}>{room.name || 'Chat'}</h3>
+                      {isBlocked && <Ban className="h-3 w-3 text-red-400 shrink-0" />}
                     </div>
                     <div className="flex items-center shrink-0 gap-1">
                       {lastMsg && <span className={`text-[10px] ${lastMsg.createdAt > Date.now() - 60000 ? 'text-emerald-400' : c.muted}`}>{formatTime(lastMsg.createdAt)}</span>}
@@ -472,7 +557,7 @@ export function ChatApp() {
                         const roomMsgs = messages[room.id] || []
                         const unreadCount = roomMsgs.filter(m => m.senderId !== currentUser?.uid && !m.readBy?.includes(currentUser?.uid || '') && m.type !== 'system').length
                         return unreadCount > 0 ? (
-                          <span className={`min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-gradient-to-r ${tp.gradient} text-white text-[9px] font-bold px-1`}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+                          <span className={`min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-gradient-to-r ${tp.gradient} text-white text-[9px] font-bold px-1 animate-bounce-subtle`}>{unreadCount > 99 ? '99+' : unreadCount}</span>
                         ) : null
                       })()}
                     </div>
@@ -509,23 +594,18 @@ export function ChatApp() {
                     } else {
                       if (userSearchTimeoutRef.current) clearTimeout(userSearchTimeoutRef.current)
                       userSearchTimeoutRef.current = setTimeout(() => {
-                        // Check if it's an exact username match (lowercase, no spaces)
                         const trimmed = val.trim().toLowerCase()
                         const exactMatch = allUsers.filter(u => u.username === trimmed)
                         if (exactMatch.length === 1) {
-                          // Exact match found - show only this user
                           setSearchResults(exactMatch)
                         } else {
-                          // Partial match - show users whose username or displayName starts with the search
                           searchUsers(val.trim(), currentUser!.uid).then(results => {
-                            // Filter to only show results that start with the search term
                             const filtered = results.filter(u =>
                               u.username.toLowerCase().startsWith(trimmed) ||
                               u.displayName.toLowerCase().startsWith(trimmed.toLowerCase())
                             )
                             setSearchResults(filtered)
                           }).catch(() => {
-                            // Fallback: filter locally from allUsers
                             const local = allUsers.filter(u =>
                               u.username.toLowerCase().startsWith(trimmed) ||
                               u.displayName.toLowerCase().startsWith(trimmed.toLowerCase())
@@ -537,11 +617,11 @@ export function ChatApp() {
                     }
                   }} className={`pl-10 h-9 rounded-xl text-sm ${c.input} ${c.text} placeholder:text-slate-500 border focus-visible:ring-1 focus-visible:ring-emerald-500/30`} />
                 </div>
-                {requestError && <div className="text-xs text-red-400 bg-red-500/10 rounded-xl px-3 py-2">{requestError}</div>}
-                {requestSuccess && <div className="text-xs text-emerald-400 bg-emerald-500/10 rounded-xl px-3 py-2">{requestSuccess}</div>}
+                {requestError && <div className="text-xs text-red-400 bg-red-500/10 rounded-xl px-3 py-2 animate-fade-in">{requestError}</div>}
+                {requestSuccess && <div className="text-xs text-emerald-400 bg-emerald-500/10 rounded-xl px-3 py-2 animate-fade-in">{requestSuccess}</div>}
               </div>
               {!userSearch.trim() ? (
-                <div className="flex flex-col items-center justify-center py-16 px-4">
+                <div className="flex flex-col items-center justify-center py-16 px-4 animate-fade-in">
                   <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-4 shadow-lg ${tp.glow}`}>
                     <Search className="h-7 w-7 text-white" />
                   </div>
@@ -549,7 +629,7 @@ export function ChatApp() {
                   <p className={`text-xs ${c.sub} text-center max-w-[220px]`}>Type an exact username to find and send a chat request</p>
                 </div>
               ) : searchResults.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 px-4">
+                <div className="flex flex-col items-center justify-center py-16 px-4 animate-fade-in">
                   <div className={`w-16 h-16 rounded-2xl ${isDark ? 'bg-white/5' : 'bg-slate-100'} flex items-center justify-center mb-4`}>
                     <Users className={`h-7 w-7 ${c.muted}`} />
                   </div>
@@ -560,20 +640,29 @@ export function ChatApp() {
                 const isOn = !!onlineUsers[user.uid]?.online
                 const p = hasPendingRequest(user.uid)
                 const ec = hasExistingChat(user.uid)
+                const isBlk = blockedUsers.includes(user.uid)
                 return (
-                  <div key={user.uid} className={`flex items-center gap-3 px-4 py-3 ${c.hover} transition-colors`}>
+                  <div key={user.uid} className={`flex items-center gap-3 px-4 py-3 ${c.hover} transition-colors animate-slide-in`}>
                     <div className="relative shrink-0">
                       <Avatar avatar={user.avatar} name={user.displayName} avatarColor={user.avatarColor || getAvatarColor(user.uid)} size={44} />
                       <OnlineDot online={isOn} isDark={isDark} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className={`font-medium text-[14px] truncate ${c.text}`}>{user.displayName}</p>
+                      <div className="flex items-center gap-1">
+                        <p className={`font-medium text-[14px] truncate ${c.text}`}>{user.displayName}</p>
+                        {isBlk && <Ban className="h-3 w-3 text-red-400 shrink-0" />}
+                      </div>
                       <p className={`text-[11px] ${c.muted}`}>
                         @{user.username} · <span className={isOn ? 'text-emerald-400' : ''}>{isOn ? 'online' : 'offline'}</span>
                       </p>
                     </div>
-                    <div className="shrink-0">
-                      {ec ? (
+                    <div className="shrink-0 flex items-center gap-1">
+                      {isBlk ? (
+                        <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1 rounded-lg px-3 text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
+                          onClick={() => handleUnblockUser(user.uid)}>
+                          <Unlock className="h-3 w-3" />Unblock
+                        </Button>
+                      ) : ec ? (
                         <Badge className={`${isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'} text-[10px] rounded-lg px-2 border-0`}>
                           <MessageCircle className="h-3 w-3 mr-1" />Chat
                         </Badge>
@@ -606,7 +695,7 @@ export function ChatApp() {
                 <p className={`text-sm text-center py-8 ${c.muted}`}>No requests yet</p>
               ) : receivedRequests.map((req) => (
                 <div key={req.id} className={`px-4 py-3 ${c.border} border-b ${req.status === 'accepted' && req.chatRoomId ? 'cursor-pointer ' + c.hover : ''}`}
-                  onClick={() => { if (req.status === 'accepted' && req.chatRoomId) { setActiveRoomId(req.chatRoomId); setShowMobileChat(true); setSidebarTab('chats') } }}>
+                  onClick={() => { if (req.status === 'accepted' && req.chatRoomId) { handleOpenChatFromRequest(req.chatRoomId) } }}>
                   <div className="flex items-center gap-3">
                     <div className="shrink-0">
                       <Avatar avatar={req.fromAvatar} name={req.fromDisplayName} avatarColor={req.fromAvatarColor || getAvatarColor(req.fromUid)} size={44} />
@@ -637,7 +726,7 @@ export function ChatApp() {
                       <Badge className={`${isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'} text-[10px] rounded-lg border-0`}>
                         <UserCheck className="h-3 w-3 mr-1" />Accepted
                       </Badge>
-                      {req.chatRoomId && <Button size="sm" className={`h-7 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 rounded-lg px-3 shadow-md ${tp.glow}`} onClick={(e) => { e.stopPropagation(); setActiveRoomId(req.chatRoomId!); setShowMobileChat(true); setSidebarTab('chats') }}>Chat <ChevronRight className="h-3 w-3" /></Button>}
+                      {req.chatRoomId && <Button size="sm" className={`h-7 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 rounded-lg px-3 shadow-md ${tp.glow}`} onClick={(e) => { e.stopPropagation(); handleOpenChatFromRequest(req.chatRoomId!) }}>Chat <ChevronRight className="h-3 w-3" /></Button>}
                     </div>
                   ) : (
                     <Badge className={`${isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-600'} text-[10px] mt-2 ml-14 rounded-lg border-0`}>
@@ -652,7 +741,7 @@ export function ChatApp() {
                 <p className={`text-sm text-center py-8 ${c.muted}`}>No sent requests</p>
               ) : sentRequests.map((req) => (
                 <div key={req.id} className={`px-4 py-3 ${c.border} border-b ${req.status === 'accepted' && req.chatRoomId ? 'cursor-pointer ' + c.hover : ''}`}
-                  onClick={() => { if (req.status === 'accepted' && req.chatRoomId) { setActiveRoomId(req.chatRoomId); setShowMobileChat(true); setSidebarTab('chats') } }}>
+                  onClick={() => { if (req.status === 'accepted' && req.chatRoomId) { handleOpenChatFromRequest(req.chatRoomId) } }}>
                   <div className="flex items-center gap-3">
                     <div className="shrink-0">
                       <Avatar avatar={req.toAvatar} name={req.toDisplayName} avatarColor={req.toAvatarColor || getAvatarColor(req.toUid)} size={44} />
@@ -677,7 +766,7 @@ export function ChatApp() {
                           <Badge className={`${isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'} text-[10px] rounded-lg border-0`}>
                             <UserCheck className="h-3 w-3 mr-1" />Accepted
                           </Badge>
-                          {req.chatRoomId && <Button size="sm" className={`h-7 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 rounded-lg px-3 shadow-md ${tp.glow}`} onClick={(e) => { e.stopPropagation(); setActiveRoomId(req.chatRoomId!); setShowMobileChat(true); setSidebarTab('chats') }}>Chat <ChevronRight className="h-3 w-3" /></Button>}
+                          {req.chatRoomId && <Button size="sm" className={`h-7 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 rounded-lg px-3 shadow-md ${tp.glow}`} onClick={(e) => { e.stopPropagation(); handleOpenChatFromRequest(req.chatRoomId!) }}>Chat <ChevronRight className="h-3 w-3" /></Button>}
                         </div>
                       ) : (
                         <Badge className={`${isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-600'} text-[10px] rounded-lg border-0`}>
@@ -693,7 +782,7 @@ export function ChatApp() {
 
           {/* SETTINGS TAB */}
           {sidebarTab === 'settings' && (
-            <div className="p-4 space-y-4">
+            <div className="p-4 space-y-4 animate-fade-in">
               {/* Profile Card */}
               <div className={`rounded-2xl p-4 ${isDark ? 'bg-white/5' : 'bg-slate-50'} space-y-3`}>
                 <div className="flex items-center gap-3">
@@ -717,6 +806,7 @@ export function ChatApp() {
                       </div>
                     )}
                     <div className="flex items-center gap-1.5 mt-0.5">
+                      <Lock className="w-2.5 h-2.5 text-emerald-500" />
                       <p className={`text-[12px] ${c.muted}`}>@{currentUser?.username}</p>
                       <button onClick={() => { setEditingUsername(true); setNewUsername(currentUser?.username || ''); setUsernameError('') }} className={`${c.muted} hover:text-emerald-400`}><Edit3 className="h-2.5 w-2.5" /></button>
                     </div>
@@ -734,6 +824,15 @@ export function ChatApp() {
                 </div>
               </div>
 
+              {/* Encryption Badge */}
+              <div className={`flex items-center gap-2 p-3 rounded-xl ${isDark ? 'bg-emerald-500/8' : 'bg-emerald-50'}`}>
+                <Shield className="h-4 w-4 text-emerald-400" />
+                <div>
+                  <p className={`text-xs font-medium text-emerald-400`}>End-to-End Encrypted</p>
+                  <p className={`text-[10px] ${c.sub}`}>Messages are encrypted and only readable by chat participants</p>
+                </div>
+              </div>
+
               {/* Change Avatar */}
               <button onClick={() => setShowAvatarPicker(true)} className={`w-full flex items-center gap-3 p-3 rounded-xl ${c.hover} transition-colors text-left`}>
                 <ImagePlus className={`h-4 w-4 ${c.muted}`} />
@@ -742,18 +841,40 @@ export function ChatApp() {
 
               {/* Change Password */}
               <button onClick={() => setShowPasswordChange(true)} className={`w-full flex items-center gap-3 p-3 rounded-xl ${c.hover} transition-colors text-left`}>
-                <Shield className={`h-4 w-4 ${c.muted}`} />
+                <Lock className={`h-4 w-4 ${c.muted}`} />
                 <span className={`text-sm ${c.text}`}>Change Password</span>
               </button>
+
+              {/* Blocked Users */}
+              {blockedUsers.length > 0 && (
+                <div>
+                  <h3 className={`text-[11px] font-bold uppercase tracking-wider mb-2 ${c.muted}`}>Blocked Users ({blockedUsers.length})</h3>
+                  <div className="space-y-1">
+                    {blockedUsers.map(uid => {
+                      const blkUser = allUsers.find(u => u.uid === uid)
+                      if (!blkUser) return null
+                      return (
+                        <div key={uid} className={`flex items-center gap-2 p-2 rounded-xl ${isDark ? 'bg-white/5' : 'bg-slate-50'}`}>
+                          <Avatar avatar={blkUser.avatar} name={blkUser.displayName} avatarColor={blkUser.avatarColor || getAvatarColor(uid)} size={28} />
+                          <span className={`text-sm flex-1 ${c.text}`}>{blkUser.displayName}</span>
+                          <Button size="sm" variant="ghost" className="h-6 text-[10px] text-emerald-400 hover:text-emerald-300" onClick={() => handleUnblockUser(uid)}>
+                            <Unlock className="h-3 w-3 mr-1" />Unblock
+                          </Button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Theme Mode */}
               <div>
                 <h3 className={`text-[11px] font-bold uppercase tracking-wider mb-2 ${c.muted}`}>Appearance</h3>
                 <div className="flex gap-2">
-                  <button onClick={() => setTheme({ mode: 'dark' })} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium transition-all ${isDark ? `bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow}` : `${c.card} ${c.text} border ${c.border}`}`}>
+                  <button onClick={() => setTheme({ mode: 'dark' })} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium transition-all duration-200 ${isDark ? `bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow}` : `${c.card} ${c.text} border ${c.border}`}`}>
                     <Moon className="h-3.5 w-3.5" />Dark
                   </button>
-                  <button onClick={() => setTheme({ mode: 'light' })} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium transition-all ${!isDark ? `bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow}` : `${c.card} ${c.text} border ${c.border}`}`}>
+                  <button onClick={() => setTheme({ mode: 'light' })} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium transition-all duration-200 ${!isDark ? `bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow}` : `${c.card} ${c.text} border ${c.border}`}`}>
                     <Sun className="h-3.5 w-3.5" />Light
                   </button>
                 </div>
@@ -765,7 +886,7 @@ export function ChatApp() {
                 <div className="grid grid-cols-3 gap-2">
                   {(Object.entries(THEME_PRESETS) as [ThemePreset, typeof THEME_PRESETS[ThemePreset]][]).map(([key, val]) => (
                     <button key={key} onClick={() => setTheme({ preset: key })}
-                      className={`flex items-center gap-1.5 py-2 px-2.5 rounded-xl text-[11px] font-medium transition-all ${preset === key ? `bg-gradient-to-r ${val.gradient} text-white shadow-md ${val.glow}` : `${c.card} ${c.text} border ${c.border}`}`}>
+                      className={`flex items-center gap-1.5 py-2 px-2.5 rounded-xl text-[11px] font-medium transition-all duration-200 ${preset === key ? `bg-gradient-to-r ${val.gradient} text-white shadow-md ${val.glow}` : `${c.card} ${c.text} border ${c.border}`}`}>
                       <div className={`w-3.5 h-3.5 rounded-full ${val.primary} shadow-sm`} style={{ boxShadow: preset === key ? `0 0 8px ${val.hex}40` : 'none' }} />{val.name}
                     </button>
                   ))}
@@ -778,7 +899,7 @@ export function ChatApp() {
                 <div className="flex gap-2">
                   {(['small', 'medium', 'large'] as const).map((size) => (
                     <button key={size} onClick={() => setTheme({ fontSize: size })}
-                      className={`flex-1 py-2 rounded-xl text-xs font-medium capitalize transition-all ${theme.fontSize === size ? `bg-gradient-to-r ${tp.gradient} text-white shadow-md` : `${c.card} ${c.text} border ${c.border}`}`}>
+                      className={`flex-1 py-2 rounded-xl text-xs font-medium capitalize transition-all duration-200 ${theme.fontSize === size ? `bg-gradient-to-r ${tp.gradient} text-white shadow-md` : `${c.card} ${c.text} border ${c.border}`}`}>
                       {size}
                     </button>
                   ))}
@@ -792,12 +913,16 @@ export function ChatApp() {
       {/* ====== CHAT AREA ====== */}
       <div className={`${!showMobileChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col ${c.bg} transition-colors duration-300`}>
         {!activeRoom ? (
-          <div className="flex-1 flex flex-col items-center justify-center">
-            <div className={`w-24 h-24 rounded-3xl bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-6 shadow-2xl ${tp.glow}`}>
+          <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
+            <div className={`w-24 h-24 rounded-3xl bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-6 shadow-2xl ${tp.glow} animate-float`}>
               <MessageCircle className="h-12 w-12 text-white" />
             </div>
             <h2 className={`text-xl font-bold ${c.text} mb-2`}>FurtherChat</h2>
             <p className={`text-sm ${c.muted} max-w-[280px] text-center`}>Select a conversation to start messaging, or find new users to chat with.</p>
+            <div className={`flex items-center gap-1.5 mt-4 ${c.sub}`}>
+              <Lock className="h-3 w-3" />
+              <span className="text-[11px]">Messages are end-to-end encrypted</span>
+            </div>
           </div>
         ) : (
           <>
@@ -812,10 +937,14 @@ export function ChatApp() {
                   <OnlineDot online={otherIsOnline} size="md" isDark={isDark} />
                 </div>
                 <div className="min-w-0">
-                  <h3 className={`font-semibold text-sm ${c.text}`}>{activeRoom.name || 'Chat'}</h3>
+                  <div className="flex items-center gap-1.5">
+                    <h3 className={`font-semibold text-sm ${c.text}`}>{activeRoom.name || 'Chat'}</h3>
+                    {isOtherBlocked && <Ban className="h-3.5 w-3.5 text-red-400" />}
+                  </div>
                   {activeRoom.type === 'direct' && (
                     <p className={`text-[11px] ${otherIsOnline ? 'text-emerald-400' : c.muted}`}>
-                      {activeTyping.length > 0 ? (
+                      {isOtherBlocked ? 'Blocked' :
+                        activeTyping.length > 0 ? (
                         <>{activeTyping.join(', ')} typing<TypingDots /></>
                       ) : otherIsOnline ? 'Online' : otherLastSeen ? formatLastSeen(otherLastSeen) : otherUidInActiveRoom ? 'Offline' : ''}
                     </p>
@@ -830,19 +959,57 @@ export function ChatApp() {
 
             {/* Chat Action Menu */}
             {chatActionMenu && (
-              <div data-chat-menu className={`absolute top-14 right-4 z-50 ${isDark ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'} border rounded-xl shadow-xl py-1 min-w-[180px]`}>
+              <div data-chat-menu className={`absolute top-14 right-4 z-50 ${isDark ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'} border rounded-xl shadow-xl py-1 min-w-[200px] animate-scale-in`}>
                 <button onClick={() => { setClearDeleteConfirm({ roomId: activeRoom.id, action: 'clear' }); setChatActionMenu(false) }}
-                  className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} ${c.text} transition-colors`}>Clear Chat</button>
+                  className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} ${c.text} transition-colors flex items-center gap-2`}>
+                  <Trash2 className="h-3.5 w-3.5" />Clear Chat
+                </button>
                 <button onClick={() => { setClearDeleteConfirm({ roomId: activeRoom.id, action: 'delete' }); setChatActionMenu(false) }}
-                  className="w-full text-left px-4 py-2.5 text-sm hover:bg-red-500/10 text-red-400 transition-colors">Delete Chat</button>
+                  className="w-full text-left px-4 py-2.5 text-sm hover:bg-red-500/10 text-red-400 transition-colors flex items-center gap-2">
+                  <Trash className="h-3.5 w-3.5" />Delete Chat
+                </button>
+                {otherUidInActiveRoom && (
+                  isOtherBlocked ? (
+                    <button onClick={() => { handleUnblockUser(otherUidInActiveRoom); setChatActionMenu(false) }}
+                      className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} text-emerald-400 transition-colors flex items-center gap-2`}>
+                      <Unlock className="h-3.5 w-3.5" />Unblock User
+                    </button>
+                  ) : (
+                    <button onClick={() => { handleBlockUser(otherUidInActiveRoom); setChatActionMenu(false) }}
+                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-red-500/10 text-red-400 transition-colors flex items-center gap-2">
+                      <Ban className="h-3.5 w-3.5" />Block User
+                    </button>
+                  )
+                )}
               </div>
             )}
 
             {/* Search bar */}
             {chatSearchQuery !== '' && (
-              <div className="px-4 py-2 border-b border-white/5">
-                <Input placeholder="Search in chat..." value={chatSearchQuery === ' ' ? '' : chatSearchQuery} onChange={(e) => setChatSearchQuery(e.target.value)}
-                  className={`h-8 text-sm rounded-lg ${c.input} ${c.text} placeholder:text-slate-500 border`} autoFocus />
+              <div className="px-4 py-2 border-b border-white/5" data-chat-search>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+                  <Input ref={chatSearchRef} placeholder="Search in chat..." value={chatSearchQuery === ' ' ? '' : chatSearchQuery} onChange={(e) => setChatSearchQuery(e.target.value)}
+                    className={`h-8 text-sm rounded-lg pl-9 ${c.input} ${c.text} placeholder:text-slate-500 border`} autoFocus />
+                  <button onClick={() => setChatSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-all">
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Blocked user notice */}
+            {isOtherBlocked && (
+              <div className={`px-4 py-3 ${isDark ? 'bg-red-500/8 border-red-500/15' : 'bg-red-50 border-red-100'} border-b flex items-center gap-3`}>
+                <Ban className="h-4 w-4 text-red-400 shrink-0" />
+                <div className="flex-1">
+                  <p className="text-xs text-red-400 font-medium">This user is blocked</p>
+                  <p className={`text-[10px] ${c.sub}`}>You won't receive messages from blocked users. Unblock to chat again.</p>
+                </div>
+                <Button size="sm" className="h-7 text-[11px] text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 rounded-lg" variant="outline"
+                  onClick={() => otherUidInActiveRoom && handleUnblockUser(otherUidInActiveRoom)}>
+                  <Unlock className="h-3 w-3 mr-1" />Unblock
+                </Button>
               </div>
             )}
 
@@ -860,15 +1027,15 @@ export function ChatApp() {
                 const showDateSep = !prevMsg || new Date(msg.createdAt).toDateString() !== new Date(prevMsg.createdAt).toDateString()
 
                 if (isSystem) return (
-                  <div key={msg.id} className="flex justify-center my-3">
-                    <span className={`text-[11px] ${c.muted} bg-white/5 backdrop-blur-sm rounded-lg px-3 py-1`}>{msg.content}</span>
+                  <div key={msg.id} className="flex justify-center my-3 animate-fade-in">
+                    <span className={`text-[11px] ${c.muted} ${isDark ? 'bg-white/5' : 'bg-slate-100'} backdrop-blur-sm rounded-lg px-3 py-1`}>{msg.content}</span>
                   </div>
                 )
 
                 return (
                   <div key={msg.id}>
                     {showDateSep && (
-                      <div className="flex justify-center my-4">
+                      <div className="flex justify-center my-4 animate-fade-in">
                         <span className={`text-[11px] ${c.muted} ${isDark ? 'bg-white/5' : 'bg-slate-100'} backdrop-blur-sm rounded-lg px-3 py-1`}>
                           {new Date(msg.createdAt).toDateString() === new Date().toDateString() ? 'Today' :
                            new Date(msg.createdAt).toDateString() === new Date(Date.now() - 86400000).toDateString() ? 'Yesterday' :
@@ -876,7 +1043,7 @@ export function ChatApp() {
                         </span>
                       </div>
                     )}
-                  <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-1 ${showAvatar ? 'mt-3' : ''}`}
+                  <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-1 ${showAvatar ? 'mt-3' : ''} msg-enter`}
                     onContextMenu={(e) => { e.preventDefault(); setContextMenuMessage(msg) }}
                     onTouchStart={() => handleTouchStart(msg)} onTouchEnd={handleTouchEnd}>
                     <div className={`flex items-end gap-2 max-w-[75%] ${isMine ? 'flex-row-reverse' : ''}`}>
@@ -891,7 +1058,7 @@ export function ChatApp() {
                             <span className="font-medium">{msg.replyToSender}</span>: {msg.replyToContent}
                           </div>
                         )}
-                        <div className={`px-3 py-2 rounded-2xl ${isDeleted ? 'italic' : ''}`} style={isMine ? {
+                        <div className={`px-3 py-2 rounded-2xl ${isDeleted ? 'italic' : ''} transition-all duration-200 hover:shadow-md`} style={isMine ? {
                           background: `linear-gradient(135deg, rgba(${tp.primaryRgb},0.22) 0%, rgba(${tp.primaryRgb},0.08) 100%)`,
                           border: `1px solid rgba(${tp.primaryRgb},0.18)`,
                         } : isDark ? {
@@ -925,7 +1092,7 @@ export function ChatApp() {
 
             {/* Reply Preview */}
             {replyingTo && (
-              <div className={`px-4 py-2 ${isDark ? 'bg-white/5' : 'bg-slate-50'} border-t ${c.border} flex items-center gap-2`}>
+              <div className={`px-4 py-2 ${isDark ? 'bg-white/5' : 'bg-slate-50'} border-t ${c.border} flex items-center gap-2 animate-slide-up`}>
                 <div className={`w-1 h-8 rounded-full bg-gradient-to-b ${tp.gradient}`} />
                 <div className="flex-1 min-w-0">
                   <p className={`text-[10px] font-medium ${c.muted}`}>{replyingTo.senderName}</p>
@@ -936,8 +1103,8 @@ export function ChatApp() {
             )}
 
             {/* Message Input */}
-            <div className={`px-4 py-3 ${c.border} border-t`}>
-              <div className={`flex items-end gap-2 ${isDark ? 'bg-white/5' : 'bg-slate-100'} rounded-2xl px-3 py-2`}>
+            <div className={`px-3 py-2.5 ${c.border} border-t`}>
+              <div className={`flex items-center gap-2 ${isDark ? 'bg-white/5' : 'bg-slate-100'} rounded-2xl px-3 py-2`}>
                 <button ref={emojiBtnRef} onClick={(e) => { e.stopPropagation(); if (showEmojiPicker) { setShowEmojiPicker(false) } else { setEmojiAnchorRect(emojiBtnRef.current?.getBoundingClientRect() || null); setShowEmojiPicker(true) } }} className={`p-1.5 rounded-lg ${c.hover} ${showEmojiPicker ? 'text-emerald-400' : c.muted} transition-colors shrink-0`}>
                   <Smile className="h-5 w-5" />
                 </button>
@@ -948,11 +1115,10 @@ export function ChatApp() {
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
                   placeholder="Type a message..."
                   rows={1}
-                  className={`flex-1 bg-transparent ${c.text} placeholder:text-slate-500 outline-none resize-none text-sm max-h-24`}
-                  style={{ lineHeight: '1.4' }}
+                  className={`flex-1 bg-transparent ${c.text} placeholder:text-slate-500 outline-none resize-none text-sm leading-5 max-h-24 self-center`}
                 />
-                <button onClick={handleSend} disabled={!messageInput.trim() || sendingMessage}
-                  className={`p-2 rounded-xl bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow} disabled:opacity-30 transition-all shrink-0`}>
+                <button onClick={handleSend} disabled={!messageInput.trim() || sendingMessage || isOtherBlocked}
+                  className={`p-2 rounded-xl bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow} disabled:opacity-30 transition-all duration-200 shrink-0 active:scale-90`}>
                   {sendingMessage ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-4 w-4" />}
                 </button>
               </div>
@@ -963,8 +1129,8 @@ export function ChatApp() {
 
       {/* ====== CONTEXT MENU ====== */}
       {contextMenuMessage && (
-        <div className="fixed inset-0 z-50" onClick={() => setContextMenuMessage(null)}>
-          <div className={`absolute ${isDark ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'} border rounded-xl shadow-2xl py-1 min-w-[180px]`}
+        <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm" onClick={() => setContextMenuMessage(null)}>
+          <div className={`absolute ${isDark ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'} border rounded-xl shadow-2xl py-1 min-w-[180px] animate-scale-in`}
             style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
             onClick={(e) => e.stopPropagation()}>
             <button onClick={() => { navigator.clipboard.writeText(contextMenuMessage.content); setContextMenuMessage(null) }}
@@ -1043,8 +1209,8 @@ export function ChatApp() {
               <DialogTitle className={c.text}>Change Password</DialogTitle>
             </DialogHeader>
             <div className="space-y-3">
-              {passwordError && <div className="text-xs text-red-400 bg-red-500/10 rounded-xl px-3 py-2">{passwordError}</div>}
-              {passwordSuccess && <div className="text-xs text-emerald-400 bg-emerald-500/10 rounded-xl px-3 py-2">Password changed successfully!</div>}
+              {passwordError && <div className="text-xs text-red-400 bg-red-500/10 rounded-xl px-3 py-2 animate-fade-in">{passwordError}</div>}
+              {passwordSuccess && <div className="text-xs text-emerald-400 bg-emerald-500/10 rounded-xl px-3 py-2 animate-fade-in">Password changed successfully!</div>}
               <Input type="password" placeholder="Current password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)}
                 className={`h-10 ${c.input} ${c.text} border rounded-xl placeholder:text-slate-500`} />
               <Input type="password" placeholder="New password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
@@ -1089,10 +1255,10 @@ export function ChatApp() {
                 <div className="grid grid-cols-4 gap-3">
                   {BUILT_IN_AVATARS.map((av) => (
                     <button key={av.id} onClick={() => handleSelectBuiltInAvatar(av.id)}
-                      className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all ${currentUser?.avatar === av.id
+                      className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all duration-200 ${currentUser?.avatar === av.id
                         ? `bg-gradient-to-r ${tp.gradient} shadow-md ${tp.glow} ring-2 ring-emerald-400/50`
                         : isDark ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-50 hover:bg-slate-100'}`}>
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: av.bg }}>
+                      <div className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center" style={{ background: av.bg }}>
                         <span className="text-lg">{av.emoji}</span>
                       </div>
                       <span className={`text-[9px] ${currentUser?.avatar === av.id ? 'text-white' : c.muted}`}>{av.label}</span>
@@ -1125,7 +1291,7 @@ export function ChatApp() {
               <div className="max-h-60 overflow-y-auto space-y-1">
                 {allUsers.map((user) => (
                   <button key={user.uid} onClick={() => setSelectedUsers(prev => prev.includes(user.uid) ? prev.filter(u => u !== user.uid) : [...prev, user.uid])}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all ${selectedUsers.includes(user.uid) ? (isDark ? 'bg-emerald-500/15' : 'bg-emerald-50') : c.hover}`}>
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 ${selectedUsers.includes(user.uid) ? (isDark ? 'bg-emerald-500/15' : 'bg-emerald-50') : c.hover}`}>
                     <Avatar avatar={user.avatar} name={user.displayName} avatarColor={user.avatarColor || getAvatarColor(user.uid)} size={32} />
                     <span className={`text-sm ${c.text}`}>{user.displayName}</span>
                     {selectedUsers.includes(user.uid) && <Check className="h-4 w-4 text-emerald-400 ml-auto" />}
