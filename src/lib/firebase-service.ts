@@ -10,6 +10,7 @@ import {
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword,
   signOut, updateProfile, updatePassword, EmailAuthProvider, reauthenticateWithCredential,
+  deleteUser,
 } from 'firebase/auth'
 import { auth, db, rtdb } from './firebase'
 import type { User, Message, ChatRoom, ChatRequest, MessageStatus } from './store'
@@ -198,6 +199,88 @@ async function cleanupInactiveUsers(): Promise<void> {
   }
 
   await Promise.all(batchDeletes)
+}
+
+// ==================== DELETE ACCOUNT ====================
+
+export async function deleteAccount(uid: string, password: string): Promise<void> {
+  const user = auth.currentUser
+  if (!user || !user.email) throw new Error('Not authenticated')
+  if (user.uid !== uid) throw new Error('User mismatch')
+
+  // Re-authenticate before deletion
+  const credential = EmailAuthProvider.credential(user.email, password)
+  await reauthenticateWithCredential(user, credential)
+
+  // Get user data for cleanup
+  const userDoc = await getDoc(doc(db, 'users', uid))
+  const userData = userDoc.exists() ? userDoc.data() : null
+  const username = userData?.username
+
+  // Delete all chat rooms the user is part of
+  try {
+    const roomsSnap = await getDocs(query(collection(db, 'chatRooms'), where('participants', 'array-contains', uid)))
+    for (const roomDoc of roomsSnap.docs) {
+      const roomData = roomDoc.data()
+      const deletedFor: string[] = roomData.deletedFor || []
+      const allParticipants = roomData.participants as string[]
+      const newDeletedFor = [...deletedFor, uid]
+      const allDeleted = allParticipants.every((p: string) => newDeletedFor.includes(p))
+
+      if (allDeleted) {
+        // All participants deleted - remove room entirely
+        const msgsSnap = await getDocs(collection(db, 'chatRooms', roomDoc.id, 'messages'))
+        for (let i = 0; i < msgsSnap.docs.length; i += 400) {
+          const chunk = msgsSnap.docs.slice(i, i + 400)
+          const batch = writeBatch(db)
+          chunk.forEach(d => batch.delete(d.ref))
+          await batch.commit()
+        }
+        await deleteDoc(doc(db, 'chatRooms', roomDoc.id))
+      } else {
+        // Mark as deleted for this user only
+        await updateDoc(doc(db, 'chatRooms', roomDoc.id), { deletedFor: newDeletedFor })
+      }
+    }
+  } catch (err) { console.error('Error cleaning up chat rooms:', err) }
+
+  // Delete chat requests involving this user
+  try {
+    const sentReqSnap = await getDocs(query(collection(db, 'chatRequests'), where('fromUid', '==', uid)))
+    const recvReqSnap = await getDocs(query(collection(db, 'chatRequests'), where('toUid', '==', uid)))
+    const allReqs = [...sentReqSnap.docs, ...recvReqSnap.docs]
+    for (let i = 0; i < allReqs.length; i += 400) {
+      const chunk = allReqs.slice(i, i + 400)
+      const batch = writeBatch(db)
+      chunk.forEach(d => batch.delete(d.ref))
+      await batch.commit()
+    }
+  } catch (err) { console.error('Error cleaning up chat requests:', err) }
+
+  // Delete presence data from RTDB
+  await set(ref(rtdb, `presence/${uid}`), null).catch(() => {})
+  await set(ref(rtdb, `typing`), null).catch(() => {}) // Clean up any lingering typing status
+
+  // Delete username reservation
+  if (username) {
+    await deleteDoc(doc(db, 'usernames', username)).catch(() => {})
+  }
+
+  // Delete user document
+  await deleteDoc(doc(db, 'users', uid))
+
+  // Delete Firebase Auth account (must be last)
+  await deleteUser(user)
+
+  // Clear local storage
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('chatUser')
+    localStorage.removeItem('chatTheme')
+    localStorage.removeItem('chatWallpaper')
+    localStorage.removeItem('pinnedChats')
+    localStorage.removeItem('messageReactions')
+    localStorage.removeItem('notifSound')
+  }
 }
 
 // ==================== STAR USER ====================

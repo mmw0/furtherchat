@@ -14,6 +14,7 @@ import {
   clearChatForMe, deleteChatRoom,
   blockUser, unblockUser, listenToBlockedUsers,
   starUser, unstarUser, listenToStarredUsers,
+  deleteAccount,
 } from '@/lib/firebase-service'
 import type { Message, ThemePreset } from '@/lib/store'
 const LazyEmojiPicker = lazy(() => import('@/components/emoji-picker').then(m => ({ default: m.EmojiPicker })))
@@ -27,7 +28,7 @@ import {
   UserX, Clock, Bell, BellRing, Smile, Trash2,
   Palette, Moon, MoreVertical, Shield, ChevronRight,
   Camera, Sun, ImagePlus, Trash, Ban, Unlock,
-  Lock, Star, Copy, Wallpaper, Volume2, VolumeX, Pin,
+  Lock, Star, Copy, Wallpaper, Volume2, VolumeX, Pin, AlertTriangle, UserMinus,
 } from 'lucide-react'
 
 const THEME_PRESETS: Record<ThemePreset, { primary: string; primaryRgb: string; gradient: string; glow: string; name: string; hex: string }> = {
@@ -37,6 +38,10 @@ const THEME_PRESETS: Record<ThemePreset, { primary: string; primaryRgb: string; 
   lavender: { primary: 'bg-violet-500', primaryRgb: '139,92,246', gradient: 'from-violet-500 to-purple-400', glow: 'shadow-violet-500/30', name: 'Lavender', hex: '#8b5cf6' },
   rose: { primary: 'bg-pink-500', primaryRgb: '236,72,153', gradient: 'from-pink-500 to-rose-400', glow: 'shadow-pink-500/30', name: 'Rose', hex: '#ec4899' },
   midnight: { primary: 'bg-indigo-500', primaryRgb: '99,102,241', gradient: 'from-indigo-500 to-blue-400', glow: 'shadow-indigo-500/30', name: 'Midnight', hex: '#6366f1' },
+  cherry: { primary: 'bg-red-500', primaryRgb: '239,68,68', gradient: 'from-red-500 to-pink-500', glow: 'shadow-red-500/30', name: 'Cherry', hex: '#ef4444' },
+  arctic: { primary: 'bg-cyan-500', primaryRgb: '6,182,212', gradient: 'from-cyan-500 to-teal-400', glow: 'shadow-cyan-500/30', name: 'Arctic', hex: '#06b6d4' },
+  sand: { primary: 'bg-amber-500', primaryRgb: '245,158,11', gradient: 'from-amber-500 to-yellow-400', glow: 'shadow-amber-500/30', name: 'Sand', hex: '#f59e0b' },
+  neon: { primary: 'bg-lime-500', primaryRgb: '132,204,22', gradient: 'from-lime-500 to-green-400', glow: 'shadow-lime-500/30', name: 'Neon', hex: '#84cc16' },
 }
 
 function TickIndicator({ status, color }: { status: Message['status']; color: string }) {
@@ -150,6 +155,12 @@ export function ChatApp() {
   const [notifSound, setNotifSound] = useState(true)
   // New state: Send Particles
   const [showSendParticles, setShowSendParticles] = useState(false)
+  // New state: Delete Account
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false)
+  const [deleteAccountPassword, setDeleteAccountPassword] = useState('')
+  const [deleteAccountConfirm, setDeleteAccountConfirm] = useState('')
+  const [deleteAccountError, setDeleteAccountError] = useState('')
+  const [deletingAccount, setDeletingAccount] = useState(false)
 
   const messageEndRef = useRef<HTMLDivElement>(null)
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -648,11 +659,15 @@ export function ChatApp() {
 
   const WALLPAPERS = [
     { id: 'none', name: 'Default', preview: isDark ? '#080c16' : '#f8fafc' },
-    { id: 'ocean', name: 'Ocean', preview: '#0c1220' },
-    { id: 'forest', name: 'Forest', preview: '#0a1a0f' },
-    { id: 'sunset', name: 'Sunset', preview: '#1a0a1e' },
-    { id: 'midnight', name: 'Midnight', preview: '#05050f' },
-    { id: 'cocoa', name: 'Cocoa', preview: '#1a120e' },
+    { id: 'ocean', name: 'Ocean', preview: isDark ? '#0c1220' : '#e8f4f8' },
+    { id: 'forest', name: 'Forest', preview: isDark ? '#0a1a0f' : '#e8f5e9' },
+    { id: 'sunset', name: 'Sunset', preview: isDark ? '#1a0a1e' : '#fce4ec' },
+    { id: 'midnight', name: 'Midnight', preview: isDark ? '#05050f' : '#e8eaf6' },
+    { id: 'cocoa', name: 'Cocoa', preview: isDark ? '#1a120e' : '#efebe9' },
+    { id: 'cherry', name: 'Cherry', preview: isDark ? '#1a0810' : '#fce4ec' },
+    { id: 'arctic', name: 'Arctic', preview: isDark ? '#081a1e' : '#e0f7fa' },
+    { id: 'neon', name: 'Neon', preview: isDark ? '#0a1a08' : '#f1f8e9' },
+    { id: 'abstract', name: 'Abstract', preview: isDark ? '#12101a' : '#f3e5f5' },
   ]
 
   const handleSetWallpaper = (id: string) => {
@@ -1314,6 +1329,22 @@ export function ChatApp() {
                   </div>
                 </button>
               </div>
+
+              {/* Danger Zone */}
+              <div className={`rounded-2xl p-4 ${isDark ? 'bg-red-500/5 border border-red-500/10' : 'bg-red-50 border border-red-100'}`}>
+                <h3 className={`text-[11px] font-bold uppercase tracking-wider mb-2 text-red-400 flex items-center gap-1.5`}>
+                  <AlertTriangle className="h-3 w-3" />Danger Zone
+                </h3>
+                <button onClick={() => { setShowDeleteAccount(true); setDeleteAccountPassword(''); setDeleteAccountConfirm(''); setDeleteAccountError('') }}
+                  className={`w-full flex items-center gap-3 p-3 rounded-xl ${isDark ? 'hover:bg-red-500/10' : 'hover:bg-red-100'} transition-colors text-left`}>
+                  <UserMinus className="h-4 w-4 text-red-400" />
+                  <div className="flex-1">
+                    <span className="text-sm text-red-400">Delete Account</span>
+                    <p className={`text-[10px] ${c.sub}`}>Permanently delete your account, username, and all data</p>
+                  </div>
+                  <ChevronRight className="h-3.5 w-3.5 text-red-400/50" />
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -1825,6 +1856,57 @@ export function ChatApp() {
                 className={`w-full bg-gradient-to-r ${tp.gradient} text-white h-10 rounded-xl`}>
                 Create Group
               </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* ====== DELETE ACCOUNT DIALOG ====== */}
+      {showDeleteAccount && (
+        <Dialog open={true} onOpenChange={setShowDeleteAccount}>
+          <DialogContent className={`${isDark ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+            <DialogHeader>
+              <DialogTitle className="text-red-400 flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5" />Delete Account
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className={`p-3 rounded-xl ${isDark ? 'bg-red-500/8 border border-red-500/15' : 'bg-red-50 border border-red-100'}`}>
+                <p className={`text-sm ${isDark ? 'text-red-300' : 'text-red-600'} font-medium`}>This action cannot be undone!</p>
+                <p className={`text-xs ${c.muted} mt-1`}>
+                  Your account, username, password, profile, and all associated data will be permanently deleted.
+                  Your chat partners will see your messages as deleted.
+                </p>
+              </div>
+              {deleteAccountError && (
+                <div className="text-xs text-red-400 bg-red-500/10 rounded-xl px-3 py-2 animate-fade-in">{deleteAccountError}</div>
+              )}
+              <Input type="password" placeholder="Enter your password to confirm" value={deleteAccountPassword} onChange={(e) => setDeleteAccountPassword(e.target.value)}
+                className={`h-10 ${c.input} ${c.text} border rounded-xl placeholder:text-slate-500`} />
+              <Input placeholder='Type "DELETE" to confirm' value={deleteAccountConfirm} onChange={(e) => setDeleteAccountConfirm(e.target.value)}
+                className={`h-10 ${c.input} ${c.text} border rounded-xl placeholder:text-slate-500`} />
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setShowDeleteAccount(false)} className={c.muted}>Cancel</Button>
+                <Button
+                  onClick={async () => {
+                    if (!currentUser) return
+                    if (!deleteAccountPassword) { setDeleteAccountError('Password is required'); return }
+                    if (deleteAccountConfirm !== 'DELETE') { setDeleteAccountError('Please type DELETE to confirm'); return }
+                    setDeletingAccount(true); setDeleteAccountError('')
+                    try {
+                      await deleteAccount(currentUser.uid, deleteAccountPassword)
+                      logout()
+                    } catch (err: any) {
+                      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') setDeleteAccountError('Incorrect password')
+                      else if (err.code === 'auth/requires-recent-login') setDeleteAccountError('Please log out and log back in, then try again')
+                      else setDeleteAccountError(err.message || 'Failed to delete account')
+                    } finally { setDeletingAccount(false) }
+                  }}
+                  disabled={deletingAccount || deleteAccountConfirm !== 'DELETE' || !deleteAccountPassword}
+                  className="bg-red-500 hover:bg-red-600 text-white">
+                  {deletingAccount ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Delete My Account'}
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>

@@ -63,7 +63,7 @@ export interface ChatRequest {
   chatRoomId?: string | null
 }
 
-export type ThemePreset = 'emerald' | 'ocean' | 'sunset' | 'lavender' | 'rose' | 'midnight'
+export type ThemePreset = 'emerald' | 'ocean' | 'sunset' | 'lavender' | 'rose' | 'midnight' | 'cherry' | 'arctic' | 'sand' | 'neon'
 export type ThemeMode = 'dark' | 'light'
 
 export interface ThemeConfig {
