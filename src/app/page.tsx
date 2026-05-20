@@ -53,9 +53,9 @@ export default function Home() {
         <div className="text-center relative z-10">
           {/* Logo */}
           <div className="relative mx-auto mb-6">
-            <div className="w-[88px] h-[88px] rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center mx-auto shadow-2xl shadow-emerald-500/30 animate-float">
+            <div className="w-[88px] h-[88px] rounded-[22px] bg-[#00C896] flex items-center justify-center mx-auto shadow-2xl shadow-emerald-500/30 animate-float">
               <svg className="w-12 h-12" viewBox="0 0 100 100" fill="none">
-                <path d="M22 20H78C83.5 20 88 24.5 88 30V54C88 59.5 83.5 64 78 64H40L28 78V64H22C16.5 64 12 59.5 12 54V30C12 24.5 16.5 20 22 20Z" stroke="white" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M22 24h56c5.5 0 10 4.5 10 10v22c0 5.5-4.5 10-10 10H42L30 80V66H22c-5.5 0-10-4.5-10-10V34c0-5.5 4.5-10 10-10z" fill="white"/>
               </svg>
             </div>
           </div>

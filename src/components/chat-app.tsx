@@ -31,7 +31,7 @@ import {
 } from 'lucide-react'
 
 const THEME_PRESETS: Record<ThemePreset, { primary: string; primaryRgb: string; gradient: string; glow: string; name: string; hex: string }> = {
-  emerald: { primary: 'bg-emerald-500', primaryRgb: '16,185,129', gradient: 'from-emerald-500 to-teal-400', glow: 'shadow-emerald-500/30', name: 'Emerald', hex: '#10b981' },
+  emerald: { primary: 'bg-emerald-500', primaryRgb: '0,200,150', gradient: 'from-emerald-500 to-teal-400', glow: 'shadow-emerald-500/30', name: 'Emerald', hex: '#00C896' },
   ocean: { primary: 'bg-blue-500', primaryRgb: '59,130,246', gradient: 'from-blue-500 to-cyan-400', glow: 'shadow-blue-500/30', name: 'Ocean', hex: '#3b82f6' },
   sunset: { primary: 'bg-orange-500', primaryRgb: '249,115,22', gradient: 'from-orange-500 to-amber-400', glow: 'shadow-orange-500/30', name: 'Sunset', hex: '#f97316' },
   lavender: { primary: 'bg-violet-500', primaryRgb: '139,92,246', gradient: 'from-violet-500 to-purple-400', glow: 'shadow-violet-500/30', name: 'Lavender', hex: '#8b5cf6' },
@@ -460,7 +460,7 @@ export function ChatApp() {
   // Dynamic favicon based on theme
   useEffect(() => {
     const color = tp.hex.replace('#', '%23')
-    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='${color}'/><path d='M22 20H78C83.5 20 88 24.5 88 30V54C88 59.5 83.5 64 78 64H40L28 78V64H22C16.5 64 12 59.5 12 54V30C12 24.5 16.5 20 22 20Z' fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/></svg>`
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='2' y='2' width='96' height='96' rx='22' fill='${color}'/><path d='M22 24h56c5.5 0 10 4.5 10 10v22c0 5.5-4.5 10-10 10H42L30 80V66H22c-5.5 0-10-4.5-10-10V34c0-5.5 4.5-10 10-10z' fill='white'/></svg>`
     const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement || document.createElement('link')
     link.setAttribute('rel', 'icon')
     link.setAttribute('type', 'image/svg+xml')
@@ -562,9 +562,9 @@ export function ChatApp() {
             const regularRooms = filteredRooms.filter(r => !(r.type === 'direct' && starredUsers.includes(r.participants.find(p => p !== currentUser?.uid) || '')))
             return filteredRooms.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 px-4 animate-fade-in">
-                <div className={`w-20 h-20 rounded-full bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-4 shadow-xl ${tp.glow}`}>
+                <div className={`w-20 h-20 rounded-[18px] bg-[#00C896] flex items-center justify-center mb-4 shadow-xl ${tp.glow}`}>
                   <svg className="w-10 h-10" viewBox="0 0 100 100" fill="none">
-                    <path d="M22 20H78C83.5 20 88 24.5 88 30V54C88 59.5 83.5 64 78 64H40L28 78V64H22C16.5 64 12 59.5 12 54V30C12 24.5 16.5 20 22 20Z" stroke="white" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M22 24h56c5.5 0 10 4.5 10 10v22c0 5.5-4.5 10-10 10H42L30 80V66H22c-5.5 0-10-4.5-10-10V34c0-5.5 4.5-10 10-10z" fill="white"/>
                   </svg>
                 </div>
                 <p className={`text-sm ${c.muted} text-center mb-3`}>No conversations yet</p>
@@ -1047,9 +1047,9 @@ export function ChatApp() {
       <div className={`${!showMobileChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col ${c.bg} transition-colors duration-300`}>
         {!activeRoom ? (
           <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
-            <div className={`w-24 h-24 rounded-full bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-6 shadow-2xl ${tp.glow} animate-float`}>
+            <div className={`w-24 h-24 rounded-[22px] bg-[#00C896] flex items-center justify-center mb-6 shadow-2xl ${tp.glow} animate-float`}>
               <svg className="w-14 h-14" viewBox="0 0 100 100" fill="none">
-                <path d="M22 20H78C83.5 20 88 24.5 88 30V54C88 59.5 83.5 64 78 64H40L28 78V64H22C16.5 64 12 59.5 12 54V30C12 24.5 16.5 20 22 20Z" stroke="white" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M22 24h56c5.5 0 10 4.5 10 10v22c0 5.5-4.5 10-10 10H42L30 80V66H22c-5.5 0-10-4.5-10-10V34c0-5.5 4.5-10 10-10z" fill="white"/>
               </svg>
             </div>
             <h2 className={`text-xl font-bold ${c.text} mb-2`}>FurtherChat</h2>
