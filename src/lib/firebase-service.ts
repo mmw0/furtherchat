@@ -107,6 +107,7 @@ export async function registerUser(username: string, password: string, displayNa
     lastActiveAt: serverTimestamp() as Timestamp,
     createdAt: serverTimestamp() as Timestamp,
     blockedUsers: [],
+    starredUsers: [],
   })
   await setDoc(doc(db, 'usernames', cleanUsername), { uid: cred.user.uid, createdAt: serverTimestamp() as Timestamp })
   return { uid: cred.user.uid, username: cleanUsername, displayName: cleanDisplayName, avatar: null, avatarColor, isOnline: true, lastSeen: null, usernameChangedAt: null }
@@ -197,6 +198,46 @@ async function cleanupInactiveUsers(): Promise<void> {
   }
 
   await Promise.all(batchDeletes)
+}
+
+// ==================== STAR USER ====================
+
+export async function starUser(currentUid: string, userToStarUid: string): Promise<void> {
+  const userDoc = await getDoc(doc(db, 'users', currentUid))
+  if (!userDoc.exists()) throw new Error('User not found')
+  const data = userDoc.data()
+  const starredUsers: string[] = data.starredUsers || []
+  if (!starredUsers.includes(userToStarUid)) {
+    await updateDoc(doc(db, 'users', currentUid), {
+      starredUsers: [...starredUsers, userToStarUid]
+    })
+  }
+}
+
+export async function unstarUser(currentUid: string, userToUnstarUid: string): Promise<void> {
+  const userDoc = await getDoc(doc(db, 'users', currentUid))
+  if (!userDoc.exists()) throw new Error('User not found')
+  const data = userDoc.data()
+  const starredUsers: string[] = data.starredUsers || []
+  await updateDoc(doc(db, 'users', currentUid), {
+    starredUsers: starredUsers.filter(uid => uid !== userToUnstarUid)
+  })
+}
+
+export async function getStarredUsers(uid: string): Promise<string[]> {
+  const userDoc = await getDoc(doc(db, 'users', uid))
+  if (!userDoc.exists()) return []
+  return userDoc.data().starredUsers || []
+}
+
+export function listenToStarredUsers(uid: string, callback: (starred: string[]) => void): () => void {
+  return onSnapshot(doc(db, 'users', uid), (snap) => {
+    if (snap.exists()) {
+      callback(snap.data().starredUsers || [])
+    } else {
+      callback([])
+    }
+  }, () => callback([]))
 }
 
 // ==================== BLOCK USER ====================

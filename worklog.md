@@ -48,3 +48,30 @@ Stage Summary:
 - Progressive account lockout preserved
 - Build compiles successfully
 - App serves and loads correctly
+---
+Task ID: 1
+Agent: Main Agent
+Task: Add Star/Save user feature, simplify requests tab, fix navigation, fix chat input alignment
+
+Work Log:
+- Added starUser, unstarUser, getStarredUsers, listenToStarredUsers functions to firebase-service.ts
+- Added starredUsers field to user registration document
+- Added starredUsers and setStarredUsers to Zustand store
+- Added Star/Bookmark icons from lucide-react imports
+- Added listener for starred users in main chat component
+- Added handleStarUser and handleUnstarUser callback handlers
+- Updated Chats Tab: Shows starred users in a separate "Starred" section at top with compact layout and star toggle
+- Updated Users Tab: Added star/unstar buttons next to each user, star indicator next to name, "Chat" badge is clickable to navigate
+- Updated Requests Tab: Simplified to show only pending incoming/sent requests and accepted ones with "Chat" button; shows "Deleted" badge when chat was deleted
+- Fixed handleOpenChatFromRequest: Now properly handles deleted chats by not setting activeRoomId if room doesn't exist
+- Added Star/Unstar option to chat action menu (three-dot menu)
+- Added star indicator next to chat header name when user is starred
+- Fixed chat input alignment: Changed from items-center to items-end, adjusted padding from py-2 to py-1.5, added mb-0.5 to buttons for alignment
+- Built and deployed to GitHub Pages
+
+Stage Summary:
+- Star/Save user feature fully implemented with Firestore persistence and real-time sync
+- Requests tab simplified to show only relevant requests (pending + accepted with Chat button)
+- Deleted chat handling fixed - no longer breaks when chat was deleted
+- Chat input alignment fixed
+- Site deployed successfully at https://mmw0.github.io/furtherchat/

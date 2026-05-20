@@ -13,6 +13,7 @@ import {
   deleteMessageForMe, deleteMessageForEveryone,
   clearChatForMe, deleteChatRoom,
   blockUser, unblockUser, listenToBlockedUsers,
+  starUser, unstarUser, listenToStarredUsers,
 } from '@/lib/firebase-service'
 import type { Message, ThemePreset } from '@/lib/store'
 import { EmojiPicker } from '@/components/emoji-picker'
@@ -26,7 +27,7 @@ import {
   UserX, Clock, Bell, BellRing, Smile, Trash2,
   Palette, Moon, MoreVertical, Shield, ChevronRight,
   Camera, Sun, ImagePlus, Trash, Ban, Unlock,
-  Lock, AlertTriangle,
+  Lock, AlertTriangle, Star, Bookmark,
 } from 'lucide-react'
 
 const THEME_PRESETS: Record<ThemePreset, { primary: string; primaryRgb: string; gradient: string; glow: string; name: string; hex: string }> = {
@@ -104,7 +105,7 @@ export function ChatApp() {
     deleteConfirm, setDeleteConfirm, chatActionMenu, setChatActionMenu,
     clearDeleteConfirm, setClearDeleteConfirm, showPasswordChange, setShowPasswordChange,
     showAvatarPicker, setShowAvatarPicker, logout,
-    blockedUsers, setBlockedUsers } = store
+    blockedUsers, setBlockedUsers, starredUsers, setStarredUsers } = store
 
   const [messageInput, setMessageInput] = useState('')
   const [showNewGroup, setShowNewGroup] = useState(false)
@@ -159,8 +160,9 @@ export function ChatApp() {
     const u3 = listenToSentRequests(currentUser.uid, setSentRequests)
     const u4 = listenToReceivedRequests(currentUser.uid, setReceivedRequests)
     const u5 = listenToBlockedUsers(currentUser.uid, setBlockedUsers)
+    const u6 = listenToStarredUsers(currentUser.uid, setStarredUsers)
     getAllUsers(currentUser.uid).then(setAllUsers)
-    listenersRef.current = [cleanup, u1, u2, u3, u4, u5]
+    listenersRef.current = [cleanup, u1, u2, u3, u4, u5, u6]
     return () => { listenersRef.current.forEach(fn => fn()) }
   }, [currentUser?.uid])
 
@@ -342,6 +344,20 @@ export function ChatApp() {
     } catch (err) { console.error(err) }
   }, [currentUser])
 
+  const handleStarUser = useCallback(async (uid: string) => {
+    if (!currentUser) return
+    try {
+      await starUser(currentUser.uid, uid)
+    } catch (err) { console.error(err) }
+  }, [currentUser])
+
+  const handleUnstarUser = useCallback(async (uid: string) => {
+    if (!currentUser) return
+    try {
+      await unstarUser(currentUser.uid, uid)
+    } catch (err) { console.error(err) }
+  }, [currentUser])
+
   const handleChangeUsername = useCallback(async () => {
     if (!currentUser || !newUsername.trim()) return; setUsernameError('')
     try {
@@ -416,17 +432,17 @@ export function ChatApp() {
 
   // Navigate to chat from request - handle deleted chats
   const handleOpenChatFromRequest = useCallback((roomId: string) => {
-    // Check if the room still exists in our chat list
     const roomExists = chatRooms.some(r => r.id === roomId)
     if (roomExists) {
       setActiveRoomId(roomId)
       setShowMobileChat(true)
       setSidebarTab('chats')
     }
-    // If room doesn't exist in our list, it might still be loading - just navigate
-    setActiveRoomId(roomId)
-    setShowMobileChat(true)
-    setSidebarTab('chats')
+    // If chat was deleted, room doesn't exist - just switch to chats tab, don't set active room
+    if (!roomExists) {
+      setSidebarTab('chats')
+      return
+    }
   }, [chatRooms])
 
   // ---- DERIVED STATE ----
@@ -520,62 +536,110 @@ export function ChatApp() {
         {/* Tab Content */}
         <div className="flex-1 overflow-y-auto">
           {/* CHATS TAB */}
-          {sidebarTab === 'chats' && (filteredRooms.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 px-4 animate-fade-in">
-              <div className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-4 shadow-xl ${tp.glow}`}>
-                <MessageCircle className="h-9 w-9 text-white" />
+          {sidebarTab === 'chats' && (() => {
+            const starredRooms = filteredRooms.filter(r => r.type === 'direct' && starredUsers.includes(r.participants.find(p => p !== currentUser?.uid) || ''))
+            const regularRooms = filteredRooms.filter(r => !(r.type === 'direct' && starredUsers.includes(r.participants.find(p => p !== currentUser?.uid) || '')))
+            return filteredRooms.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 px-4 animate-fade-in">
+                <div className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-4 shadow-xl ${tp.glow}`}>
+                  <MessageCircle className="h-9 w-9 text-white" />
+                </div>
+                <p className={`text-sm ${c.muted} text-center mb-3`}>No conversations yet</p>
+                <p className={`text-xs ${c.sub} text-center max-w-[200px] mb-4`}>Find users and send a chat request to start messaging</p>
+                <Button onClick={() => setSidebarTab('users')} className={`bg-gradient-to-r ${tp.gradient} text-white text-xs h-9 rounded-xl px-6 shadow-lg ${tp.glow} btn-glow`}>
+                  <UserPlus className="h-3.5 w-3.5 mr-1.5" />Find Users
+                </Button>
               </div>
-              <p className={`text-sm ${c.muted} text-center mb-3`}>No conversations yet</p>
-              <p className={`text-xs ${c.sub} text-center max-w-[200px] mb-4`}>Find users and send a chat request to start messaging</p>
-              <Button onClick={() => setSidebarTab('users')} className={`bg-gradient-to-r ${tp.gradient} text-white text-xs h-9 rounded-xl px-6 shadow-lg ${tp.glow} btn-glow`}>
-                <UserPlus className="h-3.5 w-3.5 mr-1.5" />Find Users
-              </Button>
-            </div>
-          ) : filteredRooms.map((room, idx) => {
-            const isActive = activeRoomId === room.id
-            const otherUid = room.type === 'direct' ? room.participants.find(p => p !== currentUser?.uid) : null
-            const isOn = otherUid ? !!onlineUsers[otherUid]?.online : false
-            const isBlocked = otherUid ? blockedUsers.includes(otherUid) : false
-            const lastMsg = room.lastMessage
-            return (
-              <button key={room.id} onClick={() => { setActiveRoomId(room.id); setShowMobileChat(true) }}
-                className={`w-full flex items-center gap-3 px-4 py-3 transition-all duration-200 ${isActive ? (isDark ? 'bg-white/8' : 'bg-slate-100') : c.hover} animate-slide-in`}
-                style={{ animationDelay: `${idx * 30}ms` }}>
-                <div className="relative shrink-0">
-                  <Avatar avatar={room.avatar} name={room.name || 'Chat'} avatarColor={room.avatarColor || getAvatarColor(room.id)} size={48} />
-                  <OnlineDot online={isOn} isDark={isDark} />
+            ) : (<>
+              {/* Starred Users Section */}
+              {starredRooms.length > 0 && (
+                <div>
+                  <div className="px-4 pt-3 pb-1"><h3 className={`text-[10px] font-bold uppercase tracking-widest ${c.muted} flex items-center gap-1`}><Star className="h-3 w-3 text-amber-400" />Starred</h3></div>
+                  {starredRooms.map((room) => {
+                    const isActive = activeRoomId === room.id
+                    const otherUid = room.type === 'direct' ? room.participants.find(p => p !== currentUser?.uid) : null
+                    const isOn = otherUid ? !!onlineUsers[otherUid]?.online : false
+                    const isBlocked = otherUid ? blockedUsers.includes(otherUid) : false
+                    const lastMsg = room.lastMessage
+                    return (
+                      <button key={room.id} onClick={() => { setActiveRoomId(room.id); setShowMobileChat(true) }}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-200 ${isActive ? (isDark ? 'bg-white/8' : 'bg-slate-100') : c.hover}`}>
+                        <div className="relative shrink-0">
+                          <Avatar avatar={room.avatar} name={room.name || 'Chat'} avatarColor={room.avatarColor || getAvatarColor(room.id)} size={44} />
+                          <OnlineDot online={isOn} isDark={isDark} />
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <div className="flex items-center gap-1">
+                            <h3 className={`font-semibold text-[13px] truncate ${c.text}`}>{room.name || 'Chat'}</h3>
+                            {isBlocked && <Ban className="h-3 w-3 text-red-400 shrink-0" />}
+                          </div>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            {lastMsg && lastMsg.senderId === currentUser?.uid && <TickIndicator status={lastMsg.status} color={lastMsg.status === 'read' ? '#53bdeb' : '#8696a0'} />}
+                            {lastMsg ? (
+                              <p className={`text-[11px] truncate ${c.muted}`}>{lastMsg.type === 'deleted' ? 'Message deleted' : lastMsg.content}</p>
+                            ) : (
+                              <p className={`text-[11px] ${c.muted}`}>No messages yet</p>
+                            )}
+                          </div>
+                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); otherUid && handleUnstarUser(otherUid) }} className="p-1 text-amber-400 hover:text-amber-300 transition-colors shrink-0">
+                          <Star className="h-3.5 w-3.5 fill-amber-400" />
+                        </button>
+                      </button>
+                    )
+                  })}
+                  <div className={`mx-4 border-b ${c.border}`} />
                 </div>
-                <div className={`flex-1 min-w-0 text-left border-b ${c.border} pb-3`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1 min-w-0">
-                      <h3 className={`font-semibold text-[14px] truncate ${c.text}`}>{room.name || 'Chat'}</h3>
-                      {isBlocked && <Ban className="h-3 w-3 text-red-400 shrink-0" />}
+              )}
+              {/* Regular Chats */}
+              {regularRooms.map((room, idx) => {
+                const isActive = activeRoomId === room.id
+                const otherUid = room.type === 'direct' ? room.participants.find(p => p !== currentUser?.uid) : null
+                const isOn = otherUid ? !!onlineUsers[otherUid]?.online : false
+                const isBlocked = otherUid ? blockedUsers.includes(otherUid) : false
+                const isStarred = otherUid ? starredUsers.includes(otherUid) : false
+                const lastMsg = room.lastMessage
+                return (
+                  <button key={room.id} onClick={() => { setActiveRoomId(room.id); setShowMobileChat(true) }}
+                    className={`w-full flex items-center gap-3 px-4 py-3 transition-all duration-200 ${isActive ? (isDark ? 'bg-white/8' : 'bg-slate-100') : c.hover} animate-slide-in`}
+                    style={{ animationDelay: `${idx * 30}ms` }}>
+                    <div className="relative shrink-0">
+                      <Avatar avatar={room.avatar} name={room.name || 'Chat'} avatarColor={room.avatarColor || getAvatarColor(room.id)} size={48} />
+                      <OnlineDot online={isOn} isDark={isDark} />
                     </div>
-                    <div className="flex items-center shrink-0 gap-1">
-                      {lastMsg && <span className={`text-[10px] ${lastMsg.createdAt > Date.now() - 60000 ? 'text-emerald-400' : c.muted}`}>{formatTime(lastMsg.createdAt)}</span>}
-                      {(() => {
-                        const roomMsgs = messages[room.id] || []
-                        const unreadCount = roomMsgs.filter(m => m.senderId !== currentUser?.uid && !m.readBy?.includes(currentUser?.uid || '') && m.type !== 'system').length
-                        return unreadCount > 0 ? (
-                          <span className={`min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-gradient-to-r ${tp.gradient} text-white text-[9px] font-bold px-1 animate-bounce-subtle`}>{unreadCount > 99 ? '99+' : unreadCount}</span>
-                        ) : null
-                      })()}
+                    <div className={`flex-1 min-w-0 text-left border-b ${c.border} pb-3`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <h3 className={`font-semibold text-[14px] truncate ${c.text}`}>{room.name || 'Chat'}</h3>
+                          {isBlocked && <Ban className="h-3 w-3 text-red-400 shrink-0" />}
+                        </div>
+                        <div className="flex items-center shrink-0 gap-1">
+                          {lastMsg && <span className={`text-[10px] ${lastMsg.createdAt > Date.now() - 60000 ? 'text-emerald-400' : c.muted}`}>{formatTime(lastMsg.createdAt)}</span>}
+                          {(() => {
+                            const roomMsgs = messages[room.id] || []
+                            const unreadCount = roomMsgs.filter(m => m.senderId !== currentUser?.uid && !m.readBy?.includes(currentUser?.uid || '') && m.type !== 'system').length
+                            return unreadCount > 0 ? (
+                              <span className={`min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-gradient-to-r ${tp.gradient} text-white text-[9px] font-bold px-1 animate-bounce-subtle`}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+                            ) : null
+                          })()}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        {lastMsg && lastMsg.senderId === currentUser?.uid && <TickIndicator status={lastMsg.status} color={lastMsg.status === 'read' ? '#53bdeb' : lastMsg.status === 'delivered' ? '#8696a0' : '#8696a0'} />}
+                        {lastMsg ? (
+                          <p className={`text-[12px] truncate ${c.muted}`}>
+                            {lastMsg.type === 'deleted' ? 'Message deleted' : room.type === 'group' ? `${lastMsg.senderName}: ${lastMsg.content}` : lastMsg.content}
+                          </p>
+                        ) : (
+                          <p className={`text-[12px] ${c.muted}`}>No messages yet</p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    {lastMsg && lastMsg.senderId === currentUser?.uid && <TickIndicator status={lastMsg.status} color={lastMsg.status === 'read' ? '#53bdeb' : lastMsg.status === 'delivered' ? '#8696a0' : '#8696a0'} />}
-                    {lastMsg ? (
-                      <p className={`text-[12px] truncate ${c.muted}`}>
-                        {lastMsg.type === 'deleted' ? 'Message deleted' : room.type === 'group' ? `${lastMsg.senderName}: ${lastMsg.content}` : lastMsg.content}
-                      </p>
-                    ) : (
-                      <p className={`text-[12px] ${c.muted}`}>No messages yet</p>
-                    )}
-                  </div>
-                </div>
-              </button>
-            )
-          }))}
+                  </button>
+                )
+              })}
+            </>)
+          })()}
 
           {/* USERS TAB */}
           {sidebarTab === 'users' && (
@@ -641,6 +705,7 @@ export function ChatApp() {
                 const p = hasPendingRequest(user.uid)
                 const ec = hasExistingChat(user.uid)
                 const isBlk = blockedUsers.includes(user.uid)
+                const isStarred = starredUsers.includes(user.uid)
                 return (
                   <div key={user.uid} className={`flex items-center gap-3 px-4 py-3 ${c.hover} transition-colors animate-slide-in`}>
                     <div className="relative shrink-0">
@@ -651,21 +716,27 @@ export function ChatApp() {
                       <div className="flex items-center gap-1">
                         <p className={`font-medium text-[14px] truncate ${c.text}`}>{user.displayName}</p>
                         {isBlk && <Ban className="h-3 w-3 text-red-400 shrink-0" />}
+                        {isStarred && <Star className="h-3 w-3 text-amber-400 fill-amber-400 shrink-0" />}
                       </div>
                       <p className={`text-[11px] ${c.muted}`}>
                         @{user.username} · <span className={isOn ? 'text-emerald-400' : ''}>{isOn ? 'online' : 'offline'}</span>
                       </p>
                     </div>
                     <div className="shrink-0 flex items-center gap-1">
-                      {isBlk ? (
-                        <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1 rounded-lg px-3 text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
-                          onClick={() => handleUnblockUser(user.uid)}>
-                          <Unlock className="h-3 w-3" />Unblock
-                        </Button>
+                      {isStarred ? (
+                        <button onClick={() => handleUnstarUser(user.uid)} className="p-1.5 rounded-lg text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 transition-all" title="Unstar user">
+                          <Star className="h-3.5 w-3.5 fill-amber-400" />
+                        </button>
                       ) : ec ? (
-                        <Badge className={`${isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'} text-[10px] rounded-lg px-2 border-0`}>
-                          <MessageCircle className="h-3 w-3 mr-1" />Chat
-                        </Badge>
+                        <>
+                          <button onClick={() => handleStarUser(user.uid)} className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title="Star user">
+                            <Star className="h-3.5 w-3.5" />
+                          </button>
+                          <Badge className={`${isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'} text-[10px] rounded-lg px-2 border-0 cursor-pointer`}
+                            onClick={() => { const room = chatRooms.find(r => r.type === 'direct' && r.participants.includes(user.uid)); if (room) { setActiveRoomId(room.id); setShowMobileChat(true) } }}>
+                            <MessageCircle className="h-3 w-3 mr-1" />Chat
+                          </Badge>
+                        </>
                       ) : p.sent ? (
                         <Badge className={`${isDark ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-600'} text-[10px] rounded-lg px-2 border-0`}>
                           <Clock className="h-3 w-3 mr-1" />Sent
@@ -680,6 +751,12 @@ export function ChatApp() {
                           {sendingRequest === user.uid ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><UserPlus className="h-3 w-3" />Request</>}
                         </Button>
                       )}
+                      {isBlk && (
+                        <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1 rounded-lg px-3 text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
+                          onClick={() => handleUnblockUser(user.uid)}>
+                          <Unlock className="h-3 w-3" />Unblock
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )
@@ -690,93 +767,137 @@ export function ChatApp() {
           {/* REQUESTS TAB */}
           {sidebarTab === 'requests' && (
             <div>
-              <div className="px-4 py-2"><h3 className={`text-[11px] font-bold uppercase tracking-wider ${c.muted}`}>Incoming {receivedRequests.filter(r => r.status === 'pending').length > 0 && `(${receivedRequests.filter(r => r.status === 'pending').length})`}</h3></div>
-              {receivedRequests.length === 0 ? (
-                <p className={`text-sm text-center py-8 ${c.muted}`}>No requests yet</p>
-              ) : receivedRequests.map((req) => (
-                <div key={req.id} className={`px-4 py-3 ${c.border} border-b ${req.status === 'accepted' && req.chatRoomId ? 'cursor-pointer ' + c.hover : ''}`}
-                  onClick={() => { if (req.status === 'accepted' && req.chatRoomId) { handleOpenChatFromRequest(req.chatRoomId) } }}>
-                  <div className="flex items-center gap-3">
-                    <div className="shrink-0">
-                      <Avatar avatar={req.fromAvatar} name={req.fromDisplayName} avatarColor={req.fromAvatarColor || getAvatarColor(req.fromUid)} size={44} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className={`font-medium text-[14px] truncate ${c.text}`}>{req.fromDisplayName}</p>
-                        {req.status === 'pending' && <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />}
-                        {req.status === 'accepted' && req.chatRoomId && <ChevronRight className={`h-4 w-4 ${c.muted} shrink-0`} />}
-                      </div>
-                      <p className={`text-[11px] ${c.muted}`}>@{req.fromUsername}</p>
-                      {req.message && <p className={`text-[11px] mt-0.5 italic ${c.sub}`}>"{req.message}"</p>}
-                    </div>
+              {receivedRequests.filter(r => r.status === 'pending').length === 0 && sentRequests.filter(r => r.status === 'pending').length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 px-4 animate-fade-in">
+                  <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-4 shadow-lg ${tp.glow}`}>
+                    <Bell className="h-7 w-7 text-white" />
                   </div>
-                  {req.status === 'pending' ? (
-                    <div className="flex items-center gap-2 mt-2.5 ml-14">
-                      <Button size="sm" className={`h-8 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 flex-1 rounded-lg shadow-md ${tp.glow}`}
-                        onClick={(e) => { e.stopPropagation(); handleAccept(req.id, req.fromUid) }} disabled={acceptingRequest === req.id}>
-                        {acceptingRequest === req.id ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><UserCheck className="h-3 w-3" />Accept</>}
-                      </Button>
-                      <Button size="sm" variant="outline" className="h-8 text-[11px] gap-1 flex-1 text-red-400 border-red-500/30 hover:bg-red-500/10 rounded-lg"
-                        onClick={(e) => { e.stopPropagation(); handleReject(req.id) }}>
-                        <UserX className="h-3 w-3" />Reject
-                      </Button>
-                    </div>
-                  ) : req.status === 'accepted' ? (
-                    <div className="flex items-center gap-2 mt-2 ml-14">
-                      <Badge className={`${isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'} text-[10px] rounded-lg border-0`}>
-                        <UserCheck className="h-3 w-3 mr-1" />Accepted
-                      </Badge>
-                      {req.chatRoomId && <Button size="sm" className={`h-7 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 rounded-lg px-3 shadow-md ${tp.glow}`} onClick={(e) => { e.stopPropagation(); handleOpenChatFromRequest(req.chatRoomId!) }}>Chat <ChevronRight className="h-3 w-3" /></Button>}
-                    </div>
-                  ) : (
-                    <Badge className={`${isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-600'} text-[10px] mt-2 ml-14 rounded-lg border-0`}>
-                      <UserX className="h-3 w-3 mr-1" />Rejected
-                    </Badge>
-                  )}
+                  <p className={`text-sm ${c.muted} text-center mb-1`}>No chat requests</p>
+                  <p className={`text-xs ${c.sub} text-center max-w-[220px]`}>When someone wants to chat with you, their request will appear here</p>
                 </div>
-              ))}
-              <div className={`${c.border} border-t my-1`} />
-              <div className="px-4 py-2"><h3 className={`text-[11px] font-bold uppercase tracking-wider ${c.muted}`}>Sent {sentRequests.filter(r => r.status === 'pending').length > 0 && `(${sentRequests.filter(r => r.status === 'pending').length})`}</h3></div>
-              {sentRequests.length === 0 ? (
-                <p className={`text-sm text-center py-8 ${c.muted}`}>No sent requests</p>
-              ) : sentRequests.map((req) => (
-                <div key={req.id} className={`px-4 py-3 ${c.border} border-b ${req.status === 'accepted' && req.chatRoomId ? 'cursor-pointer ' + c.hover : ''}`}
-                  onClick={() => { if (req.status === 'accepted' && req.chatRoomId) { handleOpenChatFromRequest(req.chatRoomId) } }}>
-                  <div className="flex items-center gap-3">
-                    <div className="shrink-0">
-                      <Avatar avatar={req.toAvatar} name={req.toDisplayName} avatarColor={req.toAvatarColor || getAvatarColor(req.toUid)} size={44} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className={`font-medium text-[14px] truncate ${c.text}`}>{req.toDisplayName}</p>
-                        {req.status === 'accepted' && req.chatRoomId && <ChevronRight className={`h-4 w-4 ${c.muted} shrink-0`} />}
+              ) : (<>
+                {/* Incoming Requests */}
+                {receivedRequests.filter(r => r.status === 'pending').length > 0 && (
+                  <div>
+                    <div className="px-4 py-2"><h3 className={`text-[11px] font-bold uppercase tracking-wider ${c.muted} flex items-center gap-1`}><BellRing className="h-3 w-3 text-emerald-400" />Incoming ({receivedRequests.filter(r => r.status === 'pending').length})</h3></div>
+                    {receivedRequests.filter(r => r.status === 'pending').map((req) => (
+                      <div key={req.id} className={`px-4 py-3 ${c.border} border-b animate-slide-in`}>
+                        <div className="flex items-center gap-3">
+                          <div className="shrink-0">
+                            <Avatar avatar={req.fromAvatar} name={req.fromDisplayName} avatarColor={req.fromAvatarColor || getAvatarColor(req.fromUid)} size={44} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className={`font-medium text-[14px] truncate ${c.text}`}>{req.fromDisplayName}</p>
+                              <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                            </div>
+                            <p className={`text-[11px] ${c.muted}`}>@{req.fromUsername}</p>
+                            {req.message && <p className={`text-[11px] mt-0.5 italic ${c.sub}`}>"{req.message}"</p>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 mt-2.5 ml-14">
+                          <Button size="sm" className={`h-8 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 flex-1 rounded-lg shadow-md ${tp.glow}`}
+                            onClick={() => handleAccept(req.id, req.fromUid)} disabled={acceptingRequest === req.id}>
+                            {acceptingRequest === req.id ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><UserCheck className="h-3 w-3" />Accept</>}
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-8 text-[11px] gap-1 flex-1 text-red-400 border-red-500/30 hover:bg-red-500/10 rounded-lg"
+                            onClick={() => handleReject(req.id)}>
+                            <UserX className="h-3 w-3" />Reject
+                          </Button>
+                        </div>
                       </div>
-                      <p className={`text-[11px] ${c.muted}`}>@{req.toUsername}</p>
-                    </div>
-                    <div className="shrink-0">
-                      {req.status === 'pending' ? (
-                        <div className="flex items-center gap-1.5">
-                          <Badge className={`${isDark ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-600'} text-[10px] rounded-lg border-0`}>
-                            <Clock className="h-3 w-3 mr-1" />Pending
-                          </Badge>
-                          <button className="text-red-400 hover:text-red-300 p-1" onClick={(e) => { e.stopPropagation(); cancelChatRequest(req.id).then(() => removeRequestFromList(req.id)) }}><X className="h-3 w-3" /></button>
-                        </div>
-                      ) : req.status === 'accepted' ? (
-                        <div className="flex items-center gap-1">
-                          <Badge className={`${isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'} text-[10px] rounded-lg border-0`}>
-                            <UserCheck className="h-3 w-3 mr-1" />Accepted
-                          </Badge>
-                          {req.chatRoomId && <Button size="sm" className={`h-7 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 rounded-lg px-3 shadow-md ${tp.glow}`} onClick={(e) => { e.stopPropagation(); handleOpenChatFromRequest(req.chatRoomId!) }}>Chat <ChevronRight className="h-3 w-3" /></Button>}
-                        </div>
-                      ) : (
-                        <Badge className={`${isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-600'} text-[10px] rounded-lg border-0`}>
-                          <UserX className="h-3 w-3 mr-1" />Rejected
-                        </Badge>
-                      )}
-                    </div>
+                    ))}
                   </div>
-                </div>
-              ))}
+                )}
+                {/* Accepted Requests - Chat Now */}
+                {receivedRequests.filter(r => r.status === 'accepted' && r.chatRoomId).length > 0 && (
+                  <div>
+                    <div className={`mx-4 border-b ${c.border}`} />
+                    <div className="px-4 py-2"><h3 className={`text-[11px] font-bold uppercase tracking-wider ${c.muted}`}>Accepted</h3></div>
+                    {receivedRequests.filter(r => r.status === 'accepted' && r.chatRoomId).map((req) => {
+                      const roomExists = chatRooms.some(r => r.id === req.chatRoomId)
+                      return (
+                        <div key={req.id} className={`px-4 py-3 ${c.border} border-b ${roomExists ? 'cursor-pointer ' + c.hover : ''}`}
+                          onClick={() => { if (roomExists && req.chatRoomId) { handleOpenChatFromRequest(req.chatRoomId) } }}>
+                          <div className="flex items-center gap-3">
+                            <div className="shrink-0">
+                              <Avatar avatar={req.fromAvatar} name={req.fromDisplayName} avatarColor={req.fromAvatarColor || getAvatarColor(req.fromUid)} size={40} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`font-medium text-[13px] truncate ${c.text}`}>{req.fromDisplayName}</p>
+                              <p className={`text-[11px] ${c.muted}`}>@{req.fromUsername}</p>
+                            </div>
+                            {roomExists ? (
+                              <Button size="sm" className={`h-7 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 rounded-lg px-3 shadow-md ${tp.glow}`} onClick={(e) => { e.stopPropagation(); req.chatRoomId && handleOpenChatFromRequest(req.chatRoomId) }}>
+                                <MessageCircle className="h-3 w-3" />Chat
+                              </Button>
+                            ) : (
+                              <Badge className={`${isDark ? 'bg-slate-500/15 text-slate-400' : 'bg-slate-100 text-slate-500'} text-[10px] rounded-lg border-0`}>Deleted</Badge>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                {/* Sent Requests */}
+                {sentRequests.filter(r => r.status === 'pending').length > 0 && (
+                  <div>
+                    <div className={`mx-4 border-b ${c.border}`} />
+                    <div className="px-4 py-2"><h3 className={`text-[11px] font-bold uppercase tracking-wider ${c.muted}`}>Sent ({sentRequests.filter(r => r.status === 'pending').length})</h3></div>
+                    {sentRequests.filter(r => r.status === 'pending').map((req) => (
+                      <div key={req.id} className={`px-4 py-3 ${c.border} border-b`}>
+                        <div className="flex items-center gap-3">
+                          <div className="shrink-0">
+                            <Avatar avatar={req.toAvatar} name={req.toDisplayName} avatarColor={req.toAvatarColor || getAvatarColor(req.toUid)} size={40} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`font-medium text-[13px] truncate ${c.text}`}>{req.toDisplayName}</p>
+                            <div className="flex items-center gap-1">
+                              <Clock className="h-2.5 w-2.5 text-amber-400" />
+                              <p className={`text-[11px] ${c.muted}`}>@{req.toUsername} · Pending</p>
+                            </div>
+                          </div>
+                          <button className="text-red-400 hover:text-red-300 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors" onClick={() => cancelChatRequest(req.id).then(() => removeRequestFromList(req.id))}>
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Sent & Accepted */}
+                {sentRequests.filter(r => r.status === 'accepted' && r.chatRoomId).length > 0 && (
+                  <div>
+                    <div className={`mx-4 border-b ${c.border}`} />
+                    <div className="px-4 py-2"><h3 className={`text-[11px] font-bold uppercase tracking-wider ${c.muted}`}>Accepted</h3></div>
+                    {sentRequests.filter(r => r.status === 'accepted' && r.chatRoomId).map((req) => {
+                      const roomExists = chatRooms.some(r => r.id === req.chatRoomId)
+                      return (
+                        <div key={req.id} className={`px-4 py-3 ${c.border} border-b ${roomExists ? 'cursor-pointer ' + c.hover : ''}`}
+                          onClick={() => { if (roomExists && req.chatRoomId) { handleOpenChatFromRequest(req.chatRoomId) } }}>
+                          <div className="flex items-center gap-3">
+                            <div className="shrink-0">
+                              <Avatar avatar={req.toAvatar} name={req.toDisplayName} avatarColor={req.toAvatarColor || getAvatarColor(req.toUid)} size={40} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`font-medium text-[13px] truncate ${c.text}`}>{req.toDisplayName}</p>
+                              <p className={`text-[11px] text-emerald-400`}>Request accepted</p>
+                            </div>
+                            {roomExists ? (
+                              <Button size="sm" className={`h-7 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 rounded-lg px-3 shadow-md ${tp.glow}`} onClick={(e) => { e.stopPropagation(); req.chatRoomId && handleOpenChatFromRequest(req.chatRoomId) }}>
+                                <MessageCircle className="h-3 w-3" />Chat
+                              </Button>
+                            ) : (
+                              <Badge className={`${isDark ? 'bg-slate-500/15 text-slate-400' : 'bg-slate-100 text-slate-500'} text-[10px] rounded-lg border-0`}>Deleted</Badge>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </>)}
             </div>
           )}
 
@@ -940,6 +1061,7 @@ export function ChatApp() {
                   <div className="flex items-center gap-1.5">
                     <h3 className={`font-semibold text-sm ${c.text}`}>{activeRoom.name || 'Chat'}</h3>
                     {isOtherBlocked && <Ban className="h-3.5 w-3.5 text-red-400" />}
+                    {otherUidInActiveRoom && starredUsers.includes(otherUidInActiveRoom) && <Star className="h-3.5 w-3.5 text-amber-400 fill-amber-400" />}
                   </div>
                   {activeRoom.type === 'direct' && (
                     <p className={`text-[11px] ${otherIsOnline ? 'text-emerald-400' : c.muted}`}>
@@ -960,6 +1082,19 @@ export function ChatApp() {
             {/* Chat Action Menu */}
             {chatActionMenu && (
               <div data-chat-menu className={`absolute top-14 right-4 z-50 ${isDark ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'} border rounded-xl shadow-xl py-1 min-w-[200px] animate-scale-in`}>
+                {otherUidInActiveRoom && (
+                  starredUsers.includes(otherUidInActiveRoom) ? (
+                    <button onClick={() => { handleUnstarUser(otherUidInActiveRoom); setChatActionMenu(false) }}
+                      className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} text-amber-400 transition-colors flex items-center gap-2`}>
+                      <Star className="h-3.5 w-3.5 fill-amber-400" />Unstar User
+                    </button>
+                  ) : (
+                    <button onClick={() => { handleStarUser(otherUidInActiveRoom); setChatActionMenu(false) }}
+                      className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} ${c.text} transition-colors flex items-center gap-2`}>
+                      <Star className="h-3.5 w-3.5" />Star User
+                    </button>
+                  )
+                )}
                 <button onClick={() => { setClearDeleteConfirm({ roomId: activeRoom.id, action: 'clear' }); setChatActionMenu(false) }}
                   className={`w-full text-left px-4 py-2.5 text-sm ${c.hover} ${c.text} transition-colors flex items-center gap-2`}>
                   <Trash2 className="h-3.5 w-3.5" />Clear Chat
@@ -1103,9 +1238,9 @@ export function ChatApp() {
             )}
 
             {/* Message Input */}
-            <div className={`px-3 py-2.5 ${c.border} border-t`}>
-              <div className={`flex items-center gap-2 ${isDark ? 'bg-white/5' : 'bg-slate-100'} rounded-2xl px-3 py-2`}>
-                <button ref={emojiBtnRef} onClick={(e) => { e.stopPropagation(); if (showEmojiPicker) { setShowEmojiPicker(false) } else { setEmojiAnchorRect(emojiBtnRef.current?.getBoundingClientRect() || null); setShowEmojiPicker(true) } }} className={`p-1.5 rounded-lg ${c.hover} ${showEmojiPicker ? 'text-emerald-400' : c.muted} transition-colors shrink-0`}>
+            <div className={`px-3 py-2 ${c.border} border-t`}>
+              <div className={`flex items-end gap-2 ${isDark ? 'bg-white/5' : 'bg-slate-100'} rounded-2xl px-3 py-1.5`}>
+                <button ref={emojiBtnRef} onClick={(e) => { e.stopPropagation(); if (showEmojiPicker) { setShowEmojiPicker(false) } else { setEmojiAnchorRect(emojiBtnRef.current?.getBoundingClientRect() || null); setShowEmojiPicker(true) } }} className={`p-1.5 rounded-lg ${c.hover} ${showEmojiPicker ? 'text-emerald-400' : c.muted} transition-colors shrink-0 mb-0.5`}>
                   <Smile className="h-5 w-5" />
                 </button>
                 {showEmojiPicker && <EmojiPicker onSelect={(e) => setMessageInput(prev => prev + e)} onClose={() => setShowEmojiPicker(false)} isDark={isDark} anchorRect={emojiAnchorRect} />}
@@ -1115,10 +1250,10 @@ export function ChatApp() {
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
                   placeholder="Type a message..."
                   rows={1}
-                  className={`flex-1 bg-transparent ${c.text} placeholder:text-slate-500 outline-none resize-none text-sm leading-5 max-h-24 self-center`}
+                  className={`flex-1 bg-transparent ${c.text} placeholder:text-slate-500 outline-none resize-none text-sm leading-5 max-h-24 py-1.5`}
                 />
                 <button onClick={handleSend} disabled={!messageInput.trim() || sendingMessage || isOtherBlocked}
-                  className={`p-2 rounded-xl bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow} disabled:opacity-30 transition-all duration-200 shrink-0 active:scale-90`}>
+                  className={`p-2 rounded-xl bg-gradient-to-r ${tp.gradient} text-white shadow-md ${tp.glow} disabled:opacity-30 transition-all duration-200 shrink-0 mb-0.5 active:scale-90`}>
                   {sendingMessage ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-4 w-4" />}
                 </button>
               </div>
