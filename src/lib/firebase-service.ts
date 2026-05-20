@@ -86,32 +86,98 @@ export async function changeUserPassword(currentPassword: string, newPassword: s
 // ==================== PRESENCE ====================
 
 export function setupPresence(uid: string): () => void {
+  // Set presence in Realtime Database
   const presenceRef = ref(rtdb, `presence/${uid}`)
-  set(presenceRef, { online: true, lastSeen: rtdbServerTimestamp() })
-  onDisconnect(presenceRef).set({ online: false, lastSeen: rtdbServerTimestamp() })
-  updateDoc(doc(db, 'users', uid), { isOnline: true }).catch(() => {})
+  const connectedRef = ref(rtdb, '.info/connected')
+  
+  // Track connection state and set presence accordingly
+  let isConnected = false
+  const connUnsub = onValue(connectedRef, (snap) => {
+    if (snap.val() === true) {
+      isConnected = true
+      set(presenceRef, { online: true, lastSeen: rtdbServerTimestamp() })
+      onDisconnect(presenceRef).set({ online: false, lastSeen: rtdbServerTimestamp() })
+    } else {
+      isConnected = false
+    }
+  })
+  
+  // Also update Firestore
+  updateDoc(doc(db, 'users', uid), { isOnline: true, lastSeen: serverTimestamp() }).catch(() => {})
+  
+  // Heartbeat to keep presence alive
   const heartbeat = setInterval(() => {
-    set(presenceRef, { online: true, lastSeen: rtdbServerTimestamp() })
-  }, 20000)
+    if (isConnected) {
+      set(presenceRef, { online: true, lastSeen: rtdbServerTimestamp() })
+    }
+    // Also refresh Firestore
+    updateDoc(doc(db, 'users', uid), { isOnline: true, lastSeen: serverTimestamp() }).catch(() => {})
+  }, 30000)
+  
   return () => {
     clearInterval(heartbeat)
+    connUnsub()
     set(presenceRef, { online: false, lastSeen: rtdbServerTimestamp() }).catch(() => {})
     updateDoc(doc(db, 'users', uid), { isOnline: false, lastSeen: serverTimestamp() }).catch(() => {})
   }
 }
 
 export function listenToPresence(callback: (users: Record<string, { online: boolean; lastSeen: number }>) => void): () => void {
+  let rtdbUsers: Record<string, { online: boolean; lastSeen: number }> = {}
+  let firestoreUsers: Record<string, { online: boolean; lastSeen: number }> = {}
+  
+  // Listen to Realtime Database for real-time updates
   const presenceRef = ref(rtdb, 'presence')
-  onValue(presenceRef, (snapshot) => {
+  const rtdbUnsub = onValue(presenceRef, (snapshot) => {
     const data = snapshot.val() || {}
-    const users: Record<string, { online: boolean; lastSeen: number }> = {}
+    rtdbUsers = {}
     Object.keys(data).forEach((uid) => {
       const val = data[uid]
-      users[uid] = { online: val?.online === true, lastSeen: val?.lastSeen || 0 }
+      if (val) {
+        rtdbUsers[uid] = { online: val.online === true, lastSeen: val.lastSeen || 0 }
+      }
     })
-    callback(users)
+    // Merge: RTDB takes priority for users present there, Firestore for others
+    const merged = { ...firestoreUsers }
+    Object.keys(rtdbUsers).forEach(uid => {
+      // RTDB data is more real-time, always prefer it
+      merged[uid] = rtdbUsers[uid]
+    })
+    callback(merged)
+  }, (error) => {
+    console.warn('RTDB presence listen failed, using Firestore only:', error)
+    // If RTDB fails, just use Firestore data
+    callback(firestoreUsers)
   })
-  return () => off(presenceRef)
+  
+  // Also listen to Firestore users collection as fallback
+  const firestoreUnsub = onSnapshot(
+    collection(db, 'users'),
+    (snapshot) => {
+      firestoreUsers = {}
+      snapshot.docs.forEach((docSnap) => {
+        const data = docSnap.data()
+        firestoreUsers[docSnap.id] = {
+          online: data.isOnline === true,
+          lastSeen: data.lastSeen?.toMillis?.() || 0,
+        }
+      })
+      // Merge: RTDB takes priority
+      const merged = { ...firestoreUsers }
+      Object.keys(rtdbUsers).forEach(uid => {
+        merged[uid] = rtdbUsers[uid]
+      })
+      callback(merged)
+    },
+    (error) => {
+      console.warn('Firestore presence listen failed:', error)
+    }
+  )
+  
+  return () => {
+    rtdbUnsub()
+    firestoreUnsub()
+  }
 }
 
 // ==================== CHAT ROOMS ====================
@@ -383,10 +449,21 @@ export async function updateProfileData(uid: string, updates: { displayName?: st
 export function setTyping(roomId: string, uid: string, username: string, isTyping: boolean): void {
   const typingRef = ref(rtdb, `typing/${roomId}/${uid}`)
   if (isTyping) {
-    set(typingRef, { username, timestamp: rtdbServerTimestamp() })
-    setTimeout(() => set(typingRef, null), 3000)
+    set(typingRef, { username, timestamp: rtdbServerTimestamp() }).catch((err) => {
+      console.warn('Failed to set typing status:', err)
+    })
+    // Auto-clear after 3 seconds of inactivity
+    if (typeof window !== 'undefined') {
+      const key = `typing_timeout_${roomId}_${uid}`
+      const existing = (window as any)[key]
+      if (existing) clearTimeout(existing)
+      ;(window as any)[key] = setTimeout(() => {
+        set(typingRef, null).catch(() => {})
+        delete (window as any)[key]
+      }, 3000)
+    }
   } else {
-    set(typingRef, null)
+    set(typingRef, null).catch(() => {})
   }
 }
 
@@ -394,9 +471,26 @@ export function listenToTyping(roomId: string, callback: (usernames: string[]) =
   const typingRef = ref(rtdb, `typing/${roomId}`)
   const unsub = onValue(typingRef, (snapshot) => {
     const data = snapshot.val() || {}
-    callback(Object.values(data).map((v: any) => v.username).filter(Boolean))
+    const now = Date.now()
+    const usernames: string[] = []
+    Object.values(data).forEach((v: any) => {
+      if (v && v.username) {
+        // Only show typing if less than 5 seconds old
+        const ts = v.timestamp || 0
+        if (now - ts < 5000) {
+          usernames.push(v.username)
+        }
+      }
+    })
+    callback(usernames)
+  }, (error) => {
+    console.warn('Failed to listen to typing:', error)
+    callback([])
   })
-  return () => off(typingRef)
+  return () => {
+    off(typingRef)
+    unsub()
+  }
 }
 
 // ==================== CHAT REQUESTS ====================

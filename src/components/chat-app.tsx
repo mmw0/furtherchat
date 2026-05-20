@@ -140,9 +140,7 @@ export function ChatApp() {
     if (!currentUser || !isFirebaseConfigured()) return
     const cleanup = setupPresence(currentUser.uid)
     const u1 = listenToPresence((users) => {
-      const onlineMap: Record<string, boolean> = {}
-      Object.keys(users).forEach(uid => { onlineMap[uid] = users[uid].online })
-      setOnlineUsers(onlineMap)
+      setOnlineUsers(users)
     })
     const u2 = listenToChatRooms(currentUser.uid, (rooms) => setChatRooms(rooms))
     const u3 = listenToSentRequests(currentUser.uid, setSentRequests)
@@ -374,7 +372,8 @@ export function ChatApp() {
   }
 
   const otherUidInActiveRoom = activeRoom?.type === 'direct' ? activeRoom.participants.find(p => p !== currentUser?.uid) : null
-  const otherIsOnline = otherUidInActiveRoom ? !!onlineUsers[otherUidInActiveRoom] : false
+  const otherIsOnline = otherUidInActiveRoom ? !!onlineUsers[otherUidInActiveRoom]?.online : false
+  const otherLastSeen = otherUidInActiveRoom ? onlineUsers[otherUidInActiveRoom]?.lastSeen || null : null
 
   return (
     <div className={`h-screen flex overflow-hidden ${c.bg} transition-colors duration-300`}>
@@ -440,7 +439,7 @@ export function ChatApp() {
           ) : filteredRooms.map((room) => {
             const isActive = activeRoomId === room.id
             const otherUid = room.type === 'direct' ? room.participants.find(p => p !== currentUser?.uid) : null
-            const isOn = otherUid ? !!onlineUsers[otherUid] : false
+            const isOn = otherUid ? !!onlineUsers[otherUid]?.online : false
             const lastMsg = room.lastMessage
             return (
               <button key={room.id} onClick={() => { setActiveRoomId(room.id); setShowMobileChat(true) }}
@@ -488,7 +487,7 @@ export function ChatApp() {
                 {requestSuccess && <div className="text-xs text-emerald-400 bg-emerald-500/10 rounded-xl px-3 py-2">{requestSuccess}</div>}
               </div>
               {(userSearch ? searchResults : allUsers).map((user) => {
-                const isOn = !!onlineUsers[user.uid]
+                const isOn = !!onlineUsers[user.uid]?.online
                 const p = hasPendingRequest(user.uid)
                 const ec = hasExistingChat(user.uid)
                 return (
@@ -742,7 +741,7 @@ export function ChatApp() {
                     <p className={`text-[11px] ${otherIsOnline ? 'text-emerald-400' : c.muted}`}>
                       {activeTyping.length > 0 ? (
                         <>{activeTyping.join(', ')} typing<TypingDots /></>
-                      ) : otherIsOnline ? 'Online' : otherUidInActiveRoom ? 'Offline' : ''}
+                      ) : otherIsOnline ? 'Online' : otherLastSeen ? formatLastSeen(otherLastSeen) : otherUidInActiveRoom ? 'Offline' : ''}
                     </p>
                   )}
                 </div>

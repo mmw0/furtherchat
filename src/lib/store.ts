@@ -92,8 +92,8 @@ interface AppState {
   setMessages: (roomId: string, messages: Message[]) => void
   addMessage: (roomId: string, message: Message) => void
   updateMessage: (roomId: string, messageId: string, updates: Partial<Message>) => void
-  onlineUsers: Record<string, boolean>
-  setOnlineUsers: (users: Record<string, boolean>) => void
+  onlineUsers: Record<string, { online: boolean; lastSeen: number }>
+  setOnlineUsers: (users: Record<string, { online: boolean; lastSeen: number }>) => void
   setUserOnline: (uid: string, online: boolean) => void
   sidebarTab: 'chats' | 'users' | 'requests' | 'settings'
   setSidebarTab: (tab: 'chats' | 'users' | 'requests' | 'settings') => void
@@ -210,7 +210,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   }),
   onlineUsers: {},
   setOnlineUsers: (users) => set({ onlineUsers: users }),
-  setUserOnline: (uid, online) => set((state) => ({ onlineUsers: { ...state.onlineUsers, [uid]: online } })),
+  setUserOnline: (uid, online) => set((state) => ({ onlineUsers: { ...state.onlineUsers, [uid]: { online, lastSeen: online ? Date.now() : (state.onlineUsers[uid]?.lastSeen || 0) } } })),
   sidebarTab: 'chats',
   setSidebarTab: (tab) => set({ sidebarTab: tab }),
   showMobileChat: false,
