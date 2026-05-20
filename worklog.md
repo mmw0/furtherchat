@@ -75,3 +75,48 @@ Stage Summary:
 - Deleted chat handling fixed - no longer breaks when chat was deleted
 - Chat input alignment fixed
 - Site deployed successfully at https://mmw0.github.io/furtherchat/
+---
+Task ID: 3
+Agent: Main Agent
+Task: Add Star tab, star button on chat list, remove accepted sections, update title/favicon, performance optimizations
+
+Work Log:
+- Updated `/src/lib/store.ts` - Added 'star' to sidebarTab type union: `'chats' | 'star' | 'users' | 'requests' | 'settings'`
+- Updated `/src/app/layout.tsx`:
+  - Changed title from "FurtherChat - Secure Real-time Messaging" to "FurtherChat"
+  - Updated default favicon SVG to new design (rounded square with white outlined chat bubble, no fill, no background)
+  - Added preconnect links for Firebase domains (firestore.googleapis.com, firebase.googleapis.com, firebaseapp.com, www.googleapis.com)
+  - Added font-display: swap for Geist and Geist_Mono fonts
+- Updated `/src/app/globals.css`:
+  - Added will-change: transform, opacity for all animated elements
+  - Added prefers-reduced-motion media query for accessibility
+  - Added GPU acceleration (backface-visibility: hidden) for chat messages
+  - Added smooth scrolling with -webkit-overflow-scrolling: touch
+- Updated `/src/components/chat-app.tsx`:
+  - Added useMemo, lazy, Suspense imports
+  - Created LazyEmojiPicker with React.lazy for code splitting
+  - Wrapped EmojiPicker usage in Suspense with loading fallback
+  - Added useMemo for filteredRooms computation (dependency: chatRooms, searchQuery)
+  - Added useMemo for starredUserDetails computation (dependency: starredUsers, allUsers)
+  - Added dynamic favicon useEffect that updates SVG favicon color based on theme preset
+  - Added Star tab in sidebar between Chats and Users (tab order: Chats, Star, Users, Requests)
+  - Star tab shows count badge when there are starred users (amber gradient)
+  - Star tab content: empty state with gradient icon + guidance text, or list of starred users with avatar, name, online status, last message, and unstar button
+  - Star tab: clicking starred user opens their chat room if exists, shows profile info otherwise
+  - Added star/unstar button on regular chat items (visible on hover via group class)
+  - Starred chats show filled amber star always; non-starred show outline star on hover
+  - Removed "Accepted Requests - Chat Now" section from Requests tab
+  - Removed "Sent & Accepted" section from Requests tab
+  - Requests tab now only shows: Incoming (pending) with Accept/Reject + Sent (pending) with Cancel
+  - Added loading="lazy" to avatar images
+  - Removed unused Bookmark and AlertTriangle imports
+  - Added `group` class to regular chat row for hover-triggered star button visibility
+
+Stage Summary:
+- Star tab fully implemented with starred users list, empty state, and unstar functionality
+- Star/unstar button added to regular chat items (hover to reveal, always shown when starred)
+- Accepted sections removed from Requests tab (cleaner, less cluttered)
+- Title simplified to "FurtherChat"
+- Dynamic theme-aware favicon implemented (updates on theme change)
+- Performance optimizations: React.lazy for EmojiPicker, useMemo for filtered data, Suspense, will-change CSS, font-display swap, preconnect, prefers-reduced-motion, lazy loading images
+- Both regular and GITHUB_PAGES builds successful ✅
