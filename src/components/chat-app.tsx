@@ -579,7 +579,8 @@ export function ChatApp() {
               {receivedRequests.length === 0 ? (
                 <p className={`text-sm text-center py-8 ${c.muted}`}>No requests yet</p>
               ) : receivedRequests.map((req) => (
-                <div key={req.id} className={`px-4 py-3 ${c.border} border-b`}>
+                <div key={req.id} className={`px-4 py-3 ${c.border} border-b ${req.status === 'accepted' && req.chatRoomId ? 'cursor-pointer ' + c.hover : ''}`}
+                  onClick={() => { if (req.status === 'accepted' && req.chatRoomId) { setActiveRoomId(req.chatRoomId); setShowMobileChat(true); setSidebarTab('chats') } }}>
                   <div className="flex items-center gap-3">
                     <div className="shrink-0">
                       <Avatar avatar={req.fromAvatar} name={req.fromDisplayName} avatarColor={req.fromAvatarColor || getAvatarColor(req.fromUid)} size={44} />
@@ -588,6 +589,7 @@ export function ChatApp() {
                       <div className="flex items-center gap-2">
                         <p className={`font-medium text-[14px] truncate ${c.text}`}>{req.fromDisplayName}</p>
                         {req.status === 'pending' && <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />}
+                        {req.status === 'accepted' && req.chatRoomId && <ChevronRight className={`h-4 w-4 ${c.muted} shrink-0`} />}
                       </div>
                       <p className={`text-[11px] ${c.muted}`}>@{req.fromUsername}</p>
                       {req.message && <p className={`text-[11px] mt-0.5 italic ${c.sub}`}>"{req.message}"</p>}
@@ -596,11 +598,11 @@ export function ChatApp() {
                   {req.status === 'pending' ? (
                     <div className="flex items-center gap-2 mt-2.5 ml-14">
                       <Button size="sm" className={`h-8 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 flex-1 rounded-lg shadow-md ${tp.glow}`}
-                        onClick={() => handleAccept(req.id, req.fromUid)} disabled={acceptingRequest === req.id}>
+                        onClick={(e) => { e.stopPropagation(); handleAccept(req.id, req.fromUid) }} disabled={acceptingRequest === req.id}>
                         {acceptingRequest === req.id ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><UserCheck className="h-3 w-3" />Accept</>}
                       </Button>
                       <Button size="sm" variant="outline" className="h-8 text-[11px] gap-1 flex-1 text-red-400 border-red-500/30 hover:bg-red-500/10 rounded-lg"
-                        onClick={() => handleReject(req.id)}>
+                        onClick={(e) => { e.stopPropagation(); handleReject(req.id) }}>
                         <UserX className="h-3 w-3" />Reject
                       </Button>
                     </div>
@@ -609,7 +611,7 @@ export function ChatApp() {
                       <Badge className={`${isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'} text-[10px] rounded-lg border-0`}>
                         <UserCheck className="h-3 w-3 mr-1" />Accepted
                       </Badge>
-                      {req.chatRoomId && <Button size="sm" variant="ghost" className="h-6 text-[10px] text-emerald-400 hover:text-emerald-300" onClick={() => { setActiveRoomId(req.chatRoomId!); setShowMobileChat(true) }}>Chat <ChevronRight className="h-3 w-3" /></Button>}
+                      {req.chatRoomId && <Button size="sm" className={`h-7 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 rounded-lg px-3 shadow-md ${tp.glow}`} onClick={(e) => { e.stopPropagation(); setActiveRoomId(req.chatRoomId!); setShowMobileChat(true); setSidebarTab('chats') }}>Chat <ChevronRight className="h-3 w-3" /></Button>}
                     </div>
                   ) : (
                     <Badge className={`${isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-600'} text-[10px] mt-2 ml-14 rounded-lg border-0`}>
@@ -623,13 +625,17 @@ export function ChatApp() {
               {sentRequests.length === 0 ? (
                 <p className={`text-sm text-center py-8 ${c.muted}`}>No sent requests</p>
               ) : sentRequests.map((req) => (
-                <div key={req.id} className={`px-4 py-3 ${c.border} border-b`}>
+                <div key={req.id} className={`px-4 py-3 ${c.border} border-b ${req.status === 'accepted' && req.chatRoomId ? 'cursor-pointer ' + c.hover : ''}`}
+                  onClick={() => { if (req.status === 'accepted' && req.chatRoomId) { setActiveRoomId(req.chatRoomId); setShowMobileChat(true); setSidebarTab('chats') } }}>
                   <div className="flex items-center gap-3">
                     <div className="shrink-0">
                       <Avatar avatar={req.toAvatar} name={req.toDisplayName} avatarColor={req.toAvatarColor || getAvatarColor(req.toUid)} size={44} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className={`font-medium text-[14px] truncate ${c.text}`}>{req.toDisplayName}</p>
+                      <div className="flex items-center gap-2">
+                        <p className={`font-medium text-[14px] truncate ${c.text}`}>{req.toDisplayName}</p>
+                        {req.status === 'accepted' && req.chatRoomId && <ChevronRight className={`h-4 w-4 ${c.muted} shrink-0`} />}
+                      </div>
                       <p className={`text-[11px] ${c.muted}`}>@{req.toUsername}</p>
                     </div>
                     <div className="shrink-0">
@@ -638,14 +644,14 @@ export function ChatApp() {
                           <Badge className={`${isDark ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-600'} text-[10px] rounded-lg border-0`}>
                             <Clock className="h-3 w-3 mr-1" />Pending
                           </Badge>
-                          <button className="text-red-400 hover:text-red-300 p-1" onClick={() => cancelChatRequest(req.id).then(() => removeRequestFromList(req.id))}><X className="h-3 w-3" /></button>
+                          <button className="text-red-400 hover:text-red-300 p-1" onClick={(e) => { e.stopPropagation(); cancelChatRequest(req.id).then(() => removeRequestFromList(req.id)) }}><X className="h-3 w-3" /></button>
                         </div>
                       ) : req.status === 'accepted' ? (
                         <div className="flex items-center gap-1">
                           <Badge className={`${isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'} text-[10px] rounded-lg border-0`}>
                             <UserCheck className="h-3 w-3 mr-1" />Accepted
                           </Badge>
-                          {req.chatRoomId && <Button size="sm" variant="ghost" className="h-6 text-[10px] text-emerald-400 hover:text-emerald-300" onClick={() => { setActiveRoomId(req.chatRoomId!); setShowMobileChat(true) }}>Chat <ChevronRight className="h-3 w-3" /></Button>}
+                          {req.chatRoomId && <Button size="sm" className={`h-7 text-[11px] bg-gradient-to-r ${tp.gradient} text-white gap-1 rounded-lg px-3 shadow-md ${tp.glow}`} onClick={(e) => { e.stopPropagation(); setActiveRoomId(req.chatRoomId!); setShowMobileChat(true); setSidebarTab('chats') }}>Chat <ChevronRight className="h-3 w-3" /></Button>}
                         </div>
                       ) : (
                         <Badge className={`${isDark ? 'bg-red-500/15 text-red-400' : 'bg-red-50 text-red-600'} text-[10px] rounded-lg border-0`}>
