@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Shield, Lock, UserPlus, LogIn, AlertTriangle, Clock, Eye, EyeOff, MessageCircle } from 'lucide-react'
+import { Shield, Lock, UserPlus, LogIn, AlertTriangle, Clock, Eye, EyeOff } from 'lucide-react'
 
 export function AuthForm() {
   const { view, setView, setAuth } = useAppStore()
@@ -110,8 +110,10 @@ export function AuthForm() {
         <div className="bg-white/[0.07] backdrop-blur-2xl rounded-3xl border border-white/10 shadow-2xl shadow-black/40 overflow-hidden">
           {/* Header */}
           <div className="p-8 text-center">
-            <div className="w-[72px] h-[72px] rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center mx-auto mb-5 shadow-xl shadow-emerald-500/25 rotate-3 hover:rotate-0 transition-transform duration-300">
-              <MessageCircle className="w-9 h-9 text-white" />
+            <div className="w-[72px] h-[72px] rounded-[18px] bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center mx-auto mb-5 shadow-xl shadow-emerald-500/25 rotate-3 hover:rotate-0 transition-transform duration-300">
+              <svg className="w-10 h-10" viewBox="0 0 100 100" fill="none">
+                <path d="M22 20H78C83.5 20 88 24.5 88 30V54C88 59.5 83.5 64 78 64H40L28 78V64H22C16.5 64 12 59.5 12 54V30C12 24.5 16.5 20 22 20Z" stroke="white" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
             </div>
             <h1 className="text-2xl font-bold text-white mb-1">
               {isLogin ? 'Welcome back' : 'Create account'}
