@@ -460,7 +460,7 @@ export function ChatApp() {
   // Dynamic favicon based on theme
   useEffect(() => {
     const color = tp.hex.replace('#', '%23')
-    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='5' y='5' width='90' height='90' rx='18' fill='${color}'/><path d='M22 20H78C83.5 20 88 24.5 88 30V54C88 59.5 83.5 64 78 64H40L28 78V64H22C16.5 64 12 59.5 12 54V30C12 24.5 16.5 20 22 20Z' fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/></svg>`
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='${color}'/><path d='M22 20H78C83.5 20 88 24.5 88 30V54C88 59.5 83.5 64 78 64H40L28 78V64H22C16.5 64 12 59.5 12 54V30C12 24.5 16.5 20 22 20Z' fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/></svg>`
     const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement || document.createElement('link')
     link.setAttribute('rel', 'icon')
     link.setAttribute('type', 'image/svg+xml')
@@ -562,7 +562,7 @@ export function ChatApp() {
             const regularRooms = filteredRooms.filter(r => !(r.type === 'direct' && starredUsers.includes(r.participants.find(p => p !== currentUser?.uid) || '')))
             return filteredRooms.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 px-4 animate-fade-in">
-                <div className={`w-20 h-20 rounded-[18px] bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-4 shadow-xl ${tp.glow}`}>
+                <div className={`w-20 h-20 rounded-full bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-4 shadow-xl ${tp.glow}`}>
                   <svg className="w-10 h-10" viewBox="0 0 100 100" fill="none">
                     <path d="M22 20H78C83.5 20 88 24.5 88 30V54C88 59.5 83.5 64 78 64H40L28 78V64H22C16.5 64 12 59.5 12 54V30C12 24.5 16.5 20 22 20Z" stroke="white" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
@@ -1047,7 +1047,7 @@ export function ChatApp() {
       <div className={`${!showMobileChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col ${c.bg} transition-colors duration-300`}>
         {!activeRoom ? (
           <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
-            <div className={`w-24 h-24 rounded-[22px] bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-6 shadow-2xl ${tp.glow} animate-float`}>
+            <div className={`w-24 h-24 rounded-full bg-gradient-to-br ${tp.gradient} flex items-center justify-center mb-6 shadow-2xl ${tp.glow} animate-float`}>
               <svg className="w-14 h-14" viewBox="0 0 100 100" fill="none">
                 <path d="M22 20H78C83.5 20 88 24.5 88 30V54C88 59.5 83.5 64 78 64H40L28 78V64H22C16.5 64 12 59.5 12 54V30C12 24.5 16.5 20 22 20Z" stroke="white" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
